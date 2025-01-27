@@ -7,8 +7,8 @@ def simExponential1D(
         consant_time_region_size : int, 
         frequency_pts : float, 
         line_width_pts : float, 
-        cos_mod_values : np.ndarray, 
-        sin_mod_values : np.ndarray, 
+        cos_mod_values : np.ndarray | None = None, 
+        sin_mod_values : np.ndarray | None = None, 
         max_amplitude : float = 0.0,
         phase : tuple[float, float] = (0.0, 0.0) 
         ) -> np.ndarray:
@@ -27,10 +27,10 @@ def simExponential1D(
         Frequency in points
     line_width_pts : float
         Line width in points
-    cos_mod_values : np.ndarray [1D array]
-        Cosine modulation frequencies
-    sin_mod_values : np.ndarray [1D array]
-        Sine modulation frequencies
+    cos_mod_values : np.ndarray [1D array] | None
+        Cosine modulation frequencies (if any)
+    sin_mod_values : np.ndarray [1D array] | None
+        Sine modulation frequencies (if any)
     max_amplitude : float
         Maximum amplitude of the signal
     phase : tuple[float, float]
@@ -97,10 +97,13 @@ def simExponential1D(
 
     # ------------------------------ Apply Couplings ----------------------------- #
 
-    cos_amplitude_func = lambda x, y : np.cos(x * y) # Cosine amplitude calculation function
-    sin_amplitude_func = lambda x, y : np.sin(x * y) # Sine amplitude calculation function
-
-    calculate_couplings(simulated_data, cos_mod_values, time_domain_size, cos_amplitude_func, True)
-    calculate_couplings(simulated_data, sin_mod_values, time_domain_size, sin_amplitude_func, False)
+    # Include coupling only if provided
+    
+    if type(cos_mod_values) != type(None):
+        cos_amplitude_func = lambda x, y : np.cos(x * y) # Cosine amplitude calculation function
+        calculate_couplings(simulated_data, cos_mod_values, time_domain_size, cos_amplitude_func, True)
+    if type(sin_mod_values) != type(None):
+        sin_amplitude_func = lambda x, y : np.sin(x * y) # Sine amplitude calculation function
+        calculate_couplings(simulated_data, sin_mod_values, time_domain_size, sin_amplitude_func, False)
 
     return simulated_data

@@ -2,10 +2,11 @@ import sys
 from pathlib import Path
 import numpy as np
 from matplotlib import pyplot as plt
+import nmrPype as pype
 
 from specsim import simExponential1D    # Import Exponential decay model
 from specsim import simGaussian1D       # Import Gaussian decay model
-from specsim import parse_commandline   # Import command-line parser
+from specsim import parseCommandLine   # Import command-line parser
 from specsim import Coordinate          # Import coordinate data class
 from specsim import Coordinate2D        # Import 2D coordinate data class
 from specsim import Spectrum            # Import spectrum data class
@@ -28,17 +29,54 @@ To-do:
 
 """
 
+def getDimensionInfo(data_frame: pype.DataFrame, data_type : str) -> tuple[float, float]:
+    """
+    Obtain x-dimension and y-dimension information from the data frame.
+
+    Parameters
+    ----------
+    data_frame : pype.DataFrame
+        Target data frame
+    data_type : str
+        Header key for the data frame
+
+    Returns
+    -------
+    tuple[float, float]
+        x-dimension and y-dimension values
+    """
+    return (data_frame.getParam(data_type, 1), data_frame.getParam(data_type, 2))
+
+def getTotalSize(data_frame: pype.DataFrame) -> tuple[int, int]:
+    """
+    Obtain the total size of the data frame.
+
+    Parameters
+    ----------
+    data_frame : pype.DataFrame
+        Target data frame
+
+    Returns
+    -------
+    tuple[int, int]
+        Total size of the data frame
+    """
+    return tuple(map(int, getDimensionInfo(data_frame, 'NDSIZE')))
+
 # ---------------------------------------------------------------------------- #
 #                                 Main Function                                #
 # ---------------------------------------------------------------------------- #
 def main() -> int:
-    spectral_widths = (2998.046875, 1920.000000)
-    origins = (3297.501221, 6221.201172)
-    observation_frequencies = (598.909973, 60.694000)
-    total_points = (307, 128)
+    command_arguments = parseCommandLine(sys.argv[1:]) 
+
+    data_frame = pype.DataFrame(command_arguments.ft)
+
+    spectral_widths = getDimensionInfo(data_frame, 'NDSW')           # (2998.046875, 1920.000000)
+    origins = getDimensionInfo(data_frame, 'NDORIG')                 # (3297.501221, 6221.201172)
+    observation_frequencies = getDimensionInfo(data_frame, "NDOBS")  # (598.909973, 60.694000)
+    total_points = getTotalSize(data_frame)                          # (307, 128) 
     
-    user_path = input("Please enter the file path: ")
-    
+    user_path = input("Please enter peak table file path: ")
     test_spectrum = Spectrum(Path(user_path), # Path("data/hsqc/nlin_time.tab") # Path("data/hsqc/master.tab")
                  spectral_widths,
                  origins,
@@ -47,10 +85,48 @@ def main() -> int:
 
     print(test_spectrum)
 
+    frequency_pts = (test_spectrum.peaks[0].position.x, test_spectrum.peaks[0].position.y)
+    line_width_pts = (test_spectrum.peaks[0].linewidths[0], test_spectrum.peaks[0].linewidths[1])
+    max_amplitude = (test_spectrum.peaks[0].intensity, test_spectrum.peaks[0].intensity)
+
+    exp_simulated_data = []
+    gaus_simulated_data = []
+
+    for i in range(2):
+        exp_simulated_data.append(simExponential1D(total_points[i], total_points[i], 0,
+                                     frequency_pts[i], line_width_pts[i], 
+                                     max_amplitude=max_amplitude[i], phase=(0, 0)))
+        gaus_simulated_data.append(simGaussian1D(total_points[i], total_points[i], 0,
+                                     frequency_pts[i], line_width_pts[i],
+                                     max_amplitude=max_amplitude[i], phase=(0, 0)))
+        
+    for i in range(2):
+        if i == 0:
+            dim = 'x'
+        elif i == 1:
+            dim = 'y'
+        else:
+            dim = ''
+
+        # Save exponential simulated data plot to file
+        plt.figure()
+        plt.plot(exp_simulated_data[i].real, label='real')
+        plt.plot(exp_simulated_data[i].imag, label='imag')
+        plt.legend(loc="upper left")
+        plt.savefig(f'simulated_data_e{dim}.png')
+
+        # Save Gaussian simulated data plot to file
+        plt.figure()
+        plt.plot(gaus_simulated_data[i].real, label='real')
+        plt.plot(gaus_simulated_data[i].imag, label='imag')
+        plt.legend(loc="upper left")
+        plt.savefig(f'simulated_data_g{dim}.png')
+        
+
 
 def old_main() -> int:
     try:
-        command_arguments = parse_commandline(sys.argv[1:]) 
+        command_arguments = parseCommandLine(sys.argv[1:]) 
         # print(command_arguments)
 
         exp_simulated_data, = simExponential1D(100, 100, 0, 

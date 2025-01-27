@@ -1,1 +1,1 @@
-from .parse import parse_commandline
+from .parse import parseCommandLine

@@ -2,7 +2,7 @@ import sys
 import argparse
 from random import randint
 
-def parse_commandline(argument_list : str) -> argparse.Namespace:
+def parseCommandLine(argument_list : str) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description='specsim: simulate NMR spectral simulator')
     parser.add_argument('-fid', type=str, default='test.fid', help='NMRPipe-format Time-Domain Input.')
     parser.add_argument('-ft', type=str, default='test.ft1', help='Corresponding NMRPipe-format Freq-Domain Input.')

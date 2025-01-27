@@ -19,12 +19,12 @@ class Peak():
     extra_params : dict[str, float]
         Extra parameter values to define the peak feature
     """
-    def __init__(self, position : Coordinate2D, intensity : float, linewidth : tuple[float, float], extra_params = {}):
+    def __init__(self, position : Coordinate2D, intensity : float, linewidths : tuple[float, float], extra_params = {}):
         self.position = position
         self.intensity = intensity
-        self.linewidth = linewidth
+        self.linewidths = linewidths
         self.extra_params = extra_params
         pass
 
     def __repr__(self):
-        return f"Peak(position={self.position}, intensity={self.intensity}, width={self.linewidth}, extra_params={self.extra_params})"
+        return f"Peak(position={self.position}, intensity={self.intensity}, width={self.linewidths}, extra_params={self.extra_params})"
