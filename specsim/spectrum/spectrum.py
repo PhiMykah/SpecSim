@@ -217,8 +217,38 @@ def string_to_peak(peak_string : str,
     # Collect x-coordinate and y-coordinate to represent peak position
     peakPosition = Coordinate2D(data["INDEX"], x_coord, y_coord)
 
+    # Check for x and y cosine couplings if they exist
+    x_cos_couplings = [coupl for coupl in data if re.fullmatch(r'X_COSJ\d+', coupl)]
+    y_cos_couplings = [coupl for coupl in data if re.fullmatch(r'Y_COSJ\d+', coupl)]
+
+    # Check for x and y sine couplings if they exist
+    x_sin_couplings = [coupl for coupl in data if re.fullmatch(r'X_SINJ\d+', coupl)]
+    y_sin_couplings = [coupl for coupl in data if re.fullmatch(r'Y_SINJ\d+', coupl)]
+
+    x_cosj : list[float] = [] # X-axis cosine j-couplings
+    y_cosj : list[float] = [] # Y-axis cosine j-couplings
+    x_sinj : list[float] = [] # X-axis sine j-couplings
+    y_sinj : list[float] = [] # Y-axis sine j-couplings
+
+    if x_cos_couplings:
+        for x_cos_key in x_cos_couplings:
+            x_cosj.append(data[x_cos_key])
+    if y_cos_couplings:
+        for y_cos_key in y_cos_couplings:
+            y_cosj.append(data[y_cos_key])
+    if x_sin_couplings:
+        for x_sin_key in x_sin_couplings:
+            x_sinj.append(data[x_sin_key])
+    if y_sin_couplings:
+        for y_sin_key in y_sin_couplings:
+            y_sinj.append(data[y_sin_key])
+
+    extra_params = {'X_COSJ':x_cosj, 'Y_COSJ':y_cosj, 
+                    'X_SINJ':x_sinj, 'Y_SINJ':y_sinj}
+
     # Return peak with position, intensity, and linewidth
-    return Peak(peakPosition, data["HEIGHT"], (data["XW_HZ"], data["YW_HZ"]))
+    return Peak(peakPosition, data["HEIGHT"], (data["XW_HZ"], data["YW_HZ"]), 
+                extra_params=extra_params)
 
 def format_to_datatype(data : str, format : str):
     """

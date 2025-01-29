@@ -44,8 +44,8 @@ def simExponential1D(
     # For our cases, "useTDDecay" "useTDJmod" are true, and "useTimeScale" is false, so we can leave out this stuff.
     # We don't need sin modulation, so this part can be left out too.
 
-    # If the amplitude is zero, return a zero array
-    if (max_amplitude == 0):
+    # If the amplitude is zero, time domain size is zero, or frequency domain size is zero, return a zero array
+    if (max_amplitude == 0) or (time_domain_size == 0) or (frequency_domain_size == 0):
         return np.zeros(time_domain_size, dtype=np.complex128)
     
     simulated_data = np.zeros(time_domain_size, dtype=np.complex128)

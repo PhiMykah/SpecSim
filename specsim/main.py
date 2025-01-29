@@ -47,7 +47,7 @@ def getDimensionInfo(data_frame: pype.DataFrame, data_type : str) -> tuple[float
     """
     return (data_frame.getParam(data_type, 1), data_frame.getParam(data_type, 2))
 
-def getTotalSize(data_frame: pype.DataFrame) -> tuple[int, int]:
+def getTotalSize(data_frame : pype.DataFrame, header_key : str) -> tuple[int, int]:
     """
     Obtain the total size of the data frame.
 
@@ -56,12 +56,15 @@ def getTotalSize(data_frame: pype.DataFrame) -> tuple[int, int]:
     data_frame : pype.DataFrame
         Target data frame
 
+    header_key : str
+        NMR Header key for size
+
     Returns
     -------
     tuple[int, int]
         Total size of the data frame
     """
-    return tuple(map(int, getDimensionInfo(data_frame, 'NDSIZE')))
+    return tuple(map(int, getDimensionInfo(data_frame, header_key)))
 
 # ---------------------------------------------------------------------------- #
 #                                 Main Function                                #
@@ -74,14 +77,15 @@ def main() -> int:
     spectral_widths = getDimensionInfo(data_frame, 'NDSW')           # (2998.046875, 1920.000000)
     origins = getDimensionInfo(data_frame, 'NDORIG')                 # (3297.501221, 6221.201172)
     observation_frequencies = getDimensionInfo(data_frame, "NDOBS")  # (598.909973, 60.694000)
-    total_points = getTotalSize(data_frame)                          # (307, 128) 
+    total_time_points = getTotalSize(data_frame, 'NDTDSIZE')         # (512, 64) 
+    total_freq_points = getTotalSize(data_frame, 'NDFTSIZE')         # (1024, 0)
     
     user_path = input("Please enter peak table file path: ")
     test_spectrum = Spectrum(Path(user_path), # Path("data/hsqc/nlin_time.tab") # Path("data/hsqc/master.tab")
                  spectral_widths,
                  origins,
                  observation_frequencies,
-                 total_points)
+                 total_time_points)
 
     print(test_spectrum)
 
@@ -89,15 +93,29 @@ def main() -> int:
     line_width_pts = (test_spectrum.peaks[0].linewidths[0], test_spectrum.peaks[0].linewidths[1])
     max_amplitude = (test_spectrum.peaks[0].intensity, test_spectrum.peaks[0].intensity)
 
+    if test_spectrum.peaks[0].extra_params["X_COSJ"]:
+        cos_mod_j = np.array(test_spectrum.peaks[0].extra_params["X_COSJ"])
+    else:
+        cos_mod_j = None
+    
+    if test_spectrum.peaks[0].extra_params["X_SINJ"]:
+        sin_mod_j = np.array(test_spectrum.peaks[0].extra_params["X_SINJ"])
+    else:
+        sin_mod_j = None
+
     exp_simulated_data = []
     gaus_simulated_data = []
 
     for i in range(2):
-        exp_simulated_data.append(simExponential1D(total_points[i], total_points[i], 0,
+        exp_simulated_data.append(simExponential1D(total_time_points[i], total_freq_points[i], 0,
                                      frequency_pts[i], line_width_pts[i], 
+                                     cos_mod_values=cos_mod_j,
+                                     sin_mod_values=sin_mod_j,
                                      max_amplitude=max_amplitude[i], phase=(0, 0)))
-        gaus_simulated_data.append(simGaussian1D(total_points[i], total_points[i], 0,
+        gaus_simulated_data.append(simGaussian1D(total_time_points[i], total_freq_points[i], 0,
                                      frequency_pts[i], line_width_pts[i],
+                                     cos_mod_values=cos_mod_j,
+                                     sin_mod_values=sin_mod_j,
                                      max_amplitude=max_amplitude[i], phase=(0, 0)))
         
     for i in range(2):

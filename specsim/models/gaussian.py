@@ -45,8 +45,8 @@ def simGaussian1D(
     # For our cases, "useTDDecay" "useTDJmod" are true, and "useTimeScale" is false, so we can leave out this stuff.
     # We don't need sin modulation, so this part can be left out too.
 
-    # If the amplitude is zero, return a zero array
-    if (max_amplitude == 0):
+    # If the amplitude is zero, time domain size is zero, or frequency domain size is zero, return a zero array
+    if (max_amplitude == 0) or (time_domain_size == 0) or (frequency_domain_size == 0):
         return np.zeros(time_domain_size, dtype=np.complex128)
     
     simulated_data = np.zeros(time_domain_size, dtype=np.complex128)
@@ -61,7 +61,7 @@ def simGaussian1D(
     # Set the constant time region to be bound by the time domain size
     consant_time_region_size = min(consant_time_region_size, time_domain_size)
 
-    magic_gaussian = np.sqrt(2 / (8 * np.log(2))) # Magic number for Gaussian decay
+    magic_gaussian = np.sqrt(2 / (8 * np.log(2))) # Magic number for Gaussian decay (~0.6005612)
 
     # Set the frequency value
     frequency : float = 2.0 * np.pi * (frequency_pts - (1 + frequency_domain_size / 2.0))/ frequency_domain_size
