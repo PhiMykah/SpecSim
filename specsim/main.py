@@ -80,8 +80,10 @@ def main() -> int:
     total_time_points = getTotalSize(data_frame, 'NDTDSIZE')         # (512, 64) 
     total_freq_points = getTotalSize(data_frame, 'NDFTSIZE')         # (1024, 0)
     
-    user_path = input("Please enter peak table file path: ")
-    test_spectrum = Spectrum(Path(user_path), # Path("data/hsqc/nlin_time.tab") # Path("data/hsqc/master.tab")
+    scaling_factor = command_arguments.scale
+
+    # user_path = input("Please enter peak table file path: ")
+    test_spectrum = Spectrum(Path("data/demo/nlin_time_single.tab"), # Path("data/hsqc/nlin_time.tab") # Path("data/hsqc/master.tab")
                  spectral_widths,
                  origins,
                  observation_frequencies,
@@ -89,9 +91,10 @@ def main() -> int:
 
     print(test_spectrum)
 
-    frequency_pts = (test_spectrum.peaks[0].position.x, test_spectrum.peaks[0].position.y)
-    line_width_pts = (test_spectrum.peaks[0].linewidths[0], test_spectrum.peaks[0].linewidths[1])
-    max_amplitude = (test_spectrum.peaks[0].intensity, test_spectrum.peaks[0].intensity)
+    frequency_pts = test_spectrum.peaks[0].position.x
+    line_width_pts = test_spectrum.peaks[0].linewidths[0]
+    amplitude = test_spectrum.peaks[0].intensity
+    phase = (-13, 0)
 
     if test_spectrum.peaks[0].extra_params["X_COSJ"]:
         cos_mod_j = np.array(test_spectrum.peaks[0].extra_params["X_COSJ"])
@@ -103,107 +106,60 @@ def main() -> int:
     else:
         sin_mod_j = None
 
-    exp_simulated_data = []
-    gaus_simulated_data = []
+    exp_simulated_data = simExponential1D(total_time_points[0], total_freq_points[0], 0,
+                                          frequency_pts, line_width_pts, 
+                                          cos_mod_values=cos_mod_j,
+                                          sin_mod_values=sin_mod_j,
+                                          amplitude=amplitude, phase=phase,
+                                          scale=scaling_factor)
+    
+    gaus_simulated_data = simGaussian1D(total_time_points[0], total_freq_points[0], 0,
+                                        frequency_pts, line_width_pts,
+                                        cos_mod_values=cos_mod_j,
+                                        sin_mod_values=sin_mod_j,
+                                        amplitude=amplitude, phase=phase,
+                                        scale=scaling_factor)
 
-    for i in range(2):
-        exp_simulated_data.append(simExponential1D(total_time_points[i], total_freq_points[i], 0,
-                                     frequency_pts[i], line_width_pts[i], 
-                                     cos_mod_values=cos_mod_j,
-                                     sin_mod_values=sin_mod_j,
-                                     max_amplitude=max_amplitude[i], phase=(0, 0)))
-        gaus_simulated_data.append(simGaussian1D(total_time_points[i], total_freq_points[i], 0,
-                                     frequency_pts[i], line_width_pts[i],
-                                     cos_mod_values=cos_mod_j,
-                                     sin_mod_values=sin_mod_j,
-                                     max_amplitude=max_amplitude[i], phase=(0, 0)))
+    demo_data_exponential : np.ndarray = pype.DataFrame("data/demo/sim_time_single_exp.fid").array[0]
+    demo_data_gaussian : np.ndarray = pype.DataFrame("data/demo/sim_time_single_gauss.fid").array[0]
+
+    # Save exponential simulated data plot to file
+    plt.figure()
+    plt.plot(demo_data_exponential.real, 'tab:orange', label='original method')
+    plt.plot(exp_simulated_data.real, 'tab:blue', label='specsim')
+    plt.legend(loc="upper right")
+    plt.savefig(f'simulated_data_ex.png')
+
+    # Save Gaussian simulated data plot to file
+    plt.figure()
+    plt.plot(demo_data_gaussian.real, 'tab:orange', label='original method')
+    plt.plot(gaus_simulated_data.real, 'tab:blue', label='specsim')
+    plt.legend(loc="upper right")
+    plt.savefig(f'simulated_data_gx.png')
         
-    for i in range(2):
-        if i == 0:
-            dim = 'x'
-        elif i == 1:
-            dim = 'y'
-        else:
-            dim = ''
-
-        # Save exponential simulated data plot to file
-        plt.figure()
-        plt.plot(exp_simulated_data[i].real, label='real')
-        plt.plot(exp_simulated_data[i].imag, label='imag')
-        plt.legend(loc="upper left")
-        plt.savefig(f'simulated_data_e{dim}.png')
-
-        # Save Gaussian simulated data plot to file
-        plt.figure()
-        plt.plot(gaus_simulated_data[i].real, label='real')
-        plt.plot(gaus_simulated_data[i].imag, label='imag')
-        plt.legend(loc="upper left")
-        plt.savefig(f'simulated_data_g{dim}.png')
-        
-
-
-def old_main() -> int:
-    try:
-        command_arguments = parseCommandLine(sys.argv[1:]) 
-        # print(command_arguments)
-
-        exp_simulated_data, = simExponential1D(100, 100, 0, 
-                                          10.0, 1.0, 
-                                          np.array([1.0, 2.0, 3.0]),
-                                          np.array([1.0, 2.0, 3.0]),
-                                          1.0, (1.0, 180.0))
-
-        exponential_integral = np.trapezoid(exp_simulated_data)
-
-        gaus_simulated_data = simGaussian1D(100, 100, 0,
-                                            10.0, 1.0,
-                                            np.array([1.0, 2.0, 3.0]),
-                                            np.array([1.0, 2.0, 3.0]),
-                                            1.0, (1.0, 180.0))
-        
-        gaussian_integral = np.trapezoid(gaus_simulated_data)
-        
-        exp_simulated_data = np.fft.fft(exp_simulated_data)
-        exp_simulated_data = np.fft.fftshift(exp_simulated_data)
-        exp_simulated_data = np.flip(exp_simulated_data)
-        exp_simulated_data = np.roll(exp_simulated_data, 1)
-
-        gaus_simulated_data = np.fft.fft(gaus_simulated_data)
-        gaus_simulated_data = np.fft.fftshift(gaus_simulated_data)
-        gaus_simulated_data = np.flip(gaus_simulated_data)
-        gaus_simulated_data = np.roll(gaus_simulated_data, 1)
-
-        # exp_simulated_data = pype.DataFrame(array = exp_simulated_data)
-        # gaus_simulated_data = pype.DataFrame(array = gaus_simulated_data)
-        
-        # exp_simulated_data.runFunc("FT")
-        # gaus_simulated_data.runFunc("FT")
-        
-        # Save exponential simulated data plot to file
-        plt.figure()
-        plt.plot(exp_simulated_data.real)
-        plt.plot(exp_simulated_data.imag)
-        plt.savefig('simulated_data_e.png')
-
-        # Save Gaussian simulated data plot to file
-        plt.figure()
-        plt.plot(gaus_simulated_data.real)
-        plt.plot(gaus_simulated_data.imag)
-        plt.savefig('simulated_data_g.png')
-
-    except Exception as e:
-        print(f"Error: {e}")
-        return 1
-    return 0
 
 if __name__ == '__main__':
-    sys.exit(main())
+    try:
+        sys.exit(main())
+    except Exception as e:
+        print(f"Error: {e}")
+        sys.exit(1)
+    
 
-# (amplitude_exponential*exponential_function*exponential_phase + amplitude_gaussian*gaussian_function*gaussian_phase)*jcoupling_mod[0]*jcoupling_mod[1]*jcoupling_mod[2]
-# amplitude_exponential = amplitude of exponential decay
-# amplitude_gaussian = amplitude of Gaussian decay
-# exponential_function = exponential decay function
-# gaussian_function = Gaussian decay function
-# exponential_phase = phase of exponential decay
-# gaussian_phase = phase of Gaussian decay
-# [jcoupling_mod1, jcoupling_mod2, jcoupling_mod3] = J-coupling modulation terms
+# --------------------------- Calculating Integral --------------------------- #
+# exponential_integral = np.trapezoid(exp_simulated_data)
+
+# ---------------------------------------------------------------------------- #
+#                                    Process                                   #
+# ---------------------------------------------------------------------------- #
+"""
+(amplitude_exponential*exponential_function*exponential_phase + amplitude_gaussian*gaussian_function*gaussian_phase)*jcoupling_mod[0]*jcoupling_mod[1]*jcoupling_mod[2]
+
+amplitude_exponential = amplitude of exponential decay
+amplitude_gaussian = amplitude of Gaussian decay
+exponential_function = exponential decay function
+gaussian_function = Gaussian decay function
+exponential_phase = phase of exponential decay
+gaussian_phase = phase of Gaussian decay
+[jcoupling_mod1, jcoupling_mod2, jcoupling_mod3] = J-coupling modulation terms
+"""

@@ -9,8 +9,9 @@ def simExponential1D(
         line_width_pts : float, 
         cos_mod_values : np.ndarray | None = None, 
         sin_mod_values : np.ndarray | None = None, 
-        max_amplitude : float = 0.0,
-        phase : tuple[float, float] = (0.0, 0.0) 
+        amplitude : float = 0.0,
+        phase : tuple[float, float] = (0.0, 0.0),
+        scale : float = 1.0
         ) -> np.ndarray:
     """
     Simulate a 1D NMR spectrum with a single exponential decay and J-coupling modulation.
@@ -31,10 +32,12 @@ def simExponential1D(
         Cosine modulation frequencies (if any)
     sin_mod_values : np.ndarray [1D array] | None
         Sine modulation frequencies (if any)
-    max_amplitude : float
-        Maximum amplitude of the signal
+    amplitude : float
+        Amplitude of the signal
     phase : tuple[float, float]
         Phase p0 and p1 of the signal
+    scale : float
+        Amplitude scaling factor, Default 1
 
     Returns
     -------
@@ -45,7 +48,7 @@ def simExponential1D(
     # We don't need sin modulation, so this part can be left out too.
 
     # If the amplitude is zero, time domain size is zero, or frequency domain size is zero, return a zero array
-    if (max_amplitude == 0) or (time_domain_size == 0) or (frequency_domain_size == 0):
+    if (amplitude == 0) or (time_domain_size == 0) or (frequency_domain_size == 0):
         return np.zeros(time_domain_size, dtype=np.complex128)
     
     simulated_data = np.zeros(time_domain_size, dtype=np.complex128)
@@ -64,7 +67,7 @@ def simExponential1D(
     frequency : float = 2.0 * np.pi * (frequency_pts - (1 + frequency_domain_size / 2.0))/ frequency_domain_size
 
     # Set the line broadening value
-    line_broadening : float = -1 * line_width_pts / time_domain_size
+    line_broadening : float = -0.5 * line_width_pts * np.pi / time_domain_size
 
     # Initialize sum
     sum : list[float] = [0.0]
@@ -77,33 +80,33 @@ def simExponential1D(
 
     # Change amplitude and for loop range if constant time region is set
     if consant_time_region_size > 0:
-        constant_amplitude_func = lambda x : 1.0
+        constant_decay_func = lambda x : 1.0
         calculate_decay(simulated_data, 0, consant_time_region_size,
                         phase_phi, phase_delay,
-                        frequency, constant_amplitude_func,
-                        max_amplitude, sum)
+                        frequency, constant_decay_func,
+                        amplitude, sum, scale)
         
-        amplitude_func = lambda x : np.exp((1 + x - consant_time_region_size) * line_broadening)
+        decay_func = lambda x : np.exp((1 + x - consant_time_region_size) * line_broadening)
         calculate_decay(simulated_data, consant_time_region_size, time_domain_size,
                         phase_phi, phase_delay,
-                        frequency, amplitude_func,
-                        max_amplitude, sum)
+                        frequency, decay_func,
+                        amplitude, sum, scale)
     else:
-        amplitude_func = lambda x : np.exp(x * line_broadening)
+        decay_func = lambda x : np.exp(x * line_broadening)
         calculate_decay(simulated_data, 0, time_domain_size,
                         phase_phi, phase_delay,
-                        frequency, amplitude_func, 
-                        max_amplitude)
+                        frequency, decay_func, 
+                        amplitude, sum, scale)
 
     # ------------------------------ Apply Couplings ----------------------------- #
 
     # Include coupling only if provided
     
     if type(cos_mod_values) != type(None):
-        cos_amplitude_func = lambda x, y : np.cos(x * y) # Cosine amplitude calculation function
-        calculate_couplings(simulated_data, cos_mod_values, time_domain_size, cos_amplitude_func, True)
+        cos_decay_func = lambda x, y : np.cos(x * y) # Cosine amplitude calculation function
+        calculate_couplings(simulated_data, cos_mod_values, time_domain_size, cos_decay_func, True)
     if type(sin_mod_values) != type(None):
-        sin_amplitude_func = lambda x, y : np.sin(x * y) # Sine amplitude calculation function
-        calculate_couplings(simulated_data, sin_mod_values, time_domain_size, sin_amplitude_func, False)
+        sin_decay_func = lambda x, y : np.sin(x * y) # Sine amplitude calculation function
+        calculate_couplings(simulated_data, sin_mod_values, time_domain_size, sin_decay_func, False)
 
     return simulated_data

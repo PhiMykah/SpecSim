@@ -8,9 +8,10 @@ def calculate_decay(
         phi : float,
         delay : float,
         frequency : float,
-        amplitude_func : Callable[[int], float],
-        max_amplitude : float,
-        sum : list[float] = [0.0]):
+        decay_func : Callable[[int], float],
+        amplitude : float,
+        sum : list[float] = [0.0],
+        scale : float = 1.0):
     """
     Calculate the decay of the simulated data.
 
@@ -28,28 +29,30 @@ def calculate_decay(
         Phase delay value
     frequency : float
         Frequency value
-    amplitude_func : callable[[int], float]
+    decay_func : callable[[int], float]
         Function defining how to calculate the amplitude
-    max_amplitude : float
+    amplitude : float
         Maximum amplitude of the signal
     sum : list[float]
         List to store the sum of the amplitudes
+    scale : float
+        Amplitude scaling factor, Default 1
 
     Returns 
     -------
     None
     """
     for i in range(first_data_point, last_data_point):
-        # Current amplitude
-        amplitude = amplitude_func(i)
+        # Decay curve
+        decay_curve = decay_func(i)
 
         # Calculate new frequency based on the phase dependent values
-        new_frequency = phi + (delay + i) * frequency
+        new_time = phi + (delay + i) * frequency
 
         # Set the real part of the simulated data
-        simulated_data.real[i] = max_amplitude * amplitude * np.cos(new_frequency)
+        simulated_data.real[i] = scale * amplitude * np.cos(new_time) * decay_curve
         # Set the imaginary part of the simulated data
-        simulated_data.imag[i] = -1 * max_amplitude * amplitude * np.sin(new_frequency)
+        simulated_data.imag[i] = -1 * scale * amplitude * np.sin(new_time) * decay_curve
 
         # Increment sum
         sum[0] += amplitude
