@@ -67,7 +67,7 @@ def simExponential1D(
     frequency : float = 2.0 * np.pi * (frequency_pts - (1 + frequency_domain_size / 2.0))/ frequency_domain_size
 
     # Set the line broadening value
-    line_broadening : float = -0.5 * line_width_pts * np.pi / time_domain_size
+    line_broadening : float = -0.5 * line_width_pts * np.pi / (time_domain_size) 
 
     # Initialize sum
     sum : list[float] = [0.0]

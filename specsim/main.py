@@ -67,8 +67,9 @@ def getTotalSize(data_frame : pype.DataFrame, header_key : str) -> tuple[int, in
     return tuple(map(int, getDimensionInfo(data_frame, header_key)))
 
 # ---------------------------------------------------------------------------- #
-#                                 Main Function                                #
+#                                     Main                                     #
 # ---------------------------------------------------------------------------- #
+
 def main() -> int:
     command_arguments = parseCommandLine(sys.argv[1:]) 
 
@@ -82,8 +83,8 @@ def main() -> int:
     
     scaling_factor = command_arguments.scale
 
-    # user_path = input("Please enter peak table file path: ")
-    test_spectrum = Spectrum(Path("data/demo/nlin_time_single.tab"), # Path("data/hsqc/nlin_time.tab") # Path("data/hsqc/master.tab")
+    user_path = input("Please enter peak table file path: ")
+    test_spectrum = Spectrum(Path(user_path), # Path("data/hsqc/nlin_time.tab") # Path("data/hsqc/master.tab")
                  spectral_widths,
                  origins,
                  observation_frequencies,
@@ -94,7 +95,7 @@ def main() -> int:
     frequency_pts = test_spectrum.peaks[0].position.x
     line_width_pts = test_spectrum.peaks[0].linewidths[0]
     amplitude = test_spectrum.peaks[0].intensity
-    phase = (-13, 0)
+    phase = (command_arguments.p0, command_arguments.p1)  # Adjust phase values p0 and p1   
 
     if test_spectrum.peaks[0].extra_params["X_COSJ"]:
         cos_mod_j = np.array(test_spectrum.peaks[0].extra_params["X_COSJ"])
@@ -136,7 +137,30 @@ def main() -> int:
     plt.plot(gaus_simulated_data.real, 'tab:blue', label='specsim')
     plt.legend(loc="upper right")
     plt.savefig(f'simulated_data_gx.png')
-        
+
+    exp_simulated_data_ft = np.roll(np.flip(np.fft.fftshift(np.fft.fft(exp_simulated_data))), 1)
+    gaus_simulated_data_ft = np.roll(np.flip(np.fft.fftshift(np.fft.fft(gaus_simulated_data))), 1)
+
+    demo_data_exponential_ft = np.roll(np.flip(np.fft.fftshift(np.fft.fft(demo_data_exponential))), 1)
+    demo_data_gaussian_ft = np.roll(np.flip(np.fft.fftshift(np.fft.fft(demo_data_gaussian))), 1)
+
+    # Save exponential simulated data plot to file
+    plt.figure()
+    plt.plot(demo_data_exponential_ft.real, 'tab:orange', label='original method')
+    plt.plot(exp_simulated_data_ft.real, 'tab:blue', label='specsim')
+    plt.legend(loc="upper right")
+    plt.savefig(f'simulated_data_ex_ft.png')
+
+    # Save Gaussian simulated data plot to file
+    plt.figure()
+    plt.plot(demo_data_gaussian_ft.real, 'tab:orange', label='original method')
+    plt.plot(gaus_simulated_data_ft.real, 'tab:blue', label='specsim')
+    plt.legend(loc="upper right")
+    plt.savefig(f'simulated_data_gx_ft.png')
+
+# ---------------------------------------------------------------------------- #
+#                                 Main Function                                #
+# ---------------------------------------------------------------------------- #
 
 if __name__ == '__main__':
     try:
@@ -144,7 +168,7 @@ if __name__ == '__main__':
     except Exception as e:
         print(f"Error: {e}")
         sys.exit(1)
-    
+
 
 # --------------------------- Calculating Integral --------------------------- #
 # exponential_integral = np.trapezoid(exp_simulated_data)

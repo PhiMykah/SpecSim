@@ -247,7 +247,7 @@ def string_to_peak(peak_string : str,
                     'X_SINJ':x_sinj, 'Y_SINJ':y_sinj}
 
     # Return peak with position, intensity, and linewidth
-    return Peak(peakPosition, data["HEIGHT"], (data["XW_HZ"], data["YW_HZ"]), 
+    return Peak(peakPosition, data["HEIGHT"], (data["XW"], data["YW"]), 
                 extra_params=extra_params)
 
 def format_to_datatype(data : str, format : str):

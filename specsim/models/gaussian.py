@@ -67,11 +67,11 @@ def simGaussian1D(
     magic_gaussian = np.sqrt(2 / (8 * np.log(2))) # Magic number for Gaussian decay (~0.6005612)
 
     # Set the frequency value
-    frequency : float = 2.0 * np.pi * (frequency_pts - (1 + frequency_domain_size / 2.0))/ frequency_domain_size
+    frequency : float = 2.0 * np.pi * (frequency_pts - (1 + frequency_domain_size / 2.0)) / frequency_domain_size
 
     # Set the line broadening value
     # !!! Make sure order of operations is correct
-    line_broadening : float = (0.5 * magic_gaussian * line_width_pts * np.pi) / time_domain_size
+    line_broadening : float = (0.5 * magic_gaussian * line_width_pts * np.pi) / (time_domain_size) 
 
     # Initialize sum
     sum : list[float] = [0.0]

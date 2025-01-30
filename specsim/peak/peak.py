@@ -15,7 +15,7 @@ class Peak():
     intensity : float
         Intensity of the peak.
     linewidth : tuple[float, float]
-        Linewidth of the peak dimensions in Hz
+        Linewidth of the peak dimensions in Pts
     extra_params : dict[str, float]
         Extra parameter values to define the peak feature
     """

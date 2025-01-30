@@ -50,9 +50,9 @@ def calculate_decay(
         new_time = phi + (delay + i) * frequency
 
         # Set the real part of the simulated data
-        simulated_data.real[i] = scale * amplitude * np.cos(new_time) * decay_curve
+        simulated_data.real[i] = scale * amplitude * decay_curve * np.cos(new_time)
         # Set the imaginary part of the simulated data
-        simulated_data.imag[i] = -1 * scale * amplitude * np.sin(new_time) * decay_curve
+        simulated_data.imag[i] = -1 * scale * amplitude * decay_curve * np.sin(new_time)
 
         # Increment sum
         sum[0] += amplitude
