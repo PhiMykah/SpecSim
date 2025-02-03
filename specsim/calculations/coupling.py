@@ -12,9 +12,9 @@ def calculate_couplings(
 
     Parameters
     ----------
-    simulated_data : np.ndarray [1D array]
+    simulated_data : numpy.ndarray [1D array]
         The simulated data array to modify
-    modulation_values : np.ndarray [1D array]
+    modulation_values : numpy.ndarray [1D array]
         Modulation values (Sin or Cos)
     data_size : int
         The last data point of the simulated data array

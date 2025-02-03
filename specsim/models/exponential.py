@@ -28,9 +28,9 @@ def simExponential1D(
         Frequency in points
     line_width_pts : float
         Line width in points
-    cos_mod_values : np.ndarray [1D array] | None
+    cos_mod_values : numpy.ndarray [1D array] | None
         Cosine modulation frequencies (if any)
-    sin_mod_values : np.ndarray [1D array] | None
+    sin_mod_values : numpy.ndarray [1D array] | None
         Sine modulation frequencies (if any)
     amplitude : float
         Amplitude of the signal

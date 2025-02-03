@@ -4,12 +4,17 @@ import numpy as np
 from matplotlib import pyplot as plt
 import nmrPype as pype
 
-from specsim import simExponential1D    # Import Exponential decay model
-from specsim import simGaussian1D       # Import Gaussian decay model
-from specsim import parseCommandLine   # Import command-line parser
-from specsim import Coordinate          # Import coordinate data class
-from specsim import Coordinate2D        # Import 2D coordinate data class
-from specsim import Spectrum            # Import spectrum data class
+# Command-line parsing  
+from specsim import parseCommandLine, SpecSimArgs, getDimensionInfo, getTotalSize
+
+# Simulation Models
+from specsim import simExponential1D, simGaussian1D     
+
+# Spectrum Generation
+from specsim import Spectrum
+
+# Spectrum Modification
+from specsim import fourierTransform
 
 """
 1. Gaussian decay model where each peak has adjustable phase.
@@ -29,120 +34,61 @@ To-do:
 
 """
 
-def getDimensionInfo(data_frame: pype.DataFrame, data_type : str) -> tuple[float, float]:
-    """
-    Obtain x-dimension and y-dimension information from the data frame.
-
-    Parameters
-    ----------
-    data_frame : pype.DataFrame
-        Target data frame
-    data_type : str
-        Header key for the data frame
-
-    Returns
-    -------
-    tuple[float, float]
-        x-dimension and y-dimension values
-    """
-    return (data_frame.getParam(data_type, 1), data_frame.getParam(data_type, 2))
-
-def getTotalSize(data_frame : pype.DataFrame, header_key : str) -> tuple[int, int]:
-    """
-    Obtain the total size of the data frame.
-
-    Parameters
-    ----------
-    data_frame : pype.DataFrame
-        Target data frame
-
-    header_key : str
-        NMR Header key for size
-
-    Returns
-    -------
-    tuple[int, int]
-        Total size of the data frame
-    """
-    return tuple(map(int, getDimensionInfo(data_frame, header_key)))
-
 # ---------------------------------------------------------------------------- #
 #                                     Main                                     #
 # ---------------------------------------------------------------------------- #
 
 def main() -> int:
-    command_arguments = parseCommandLine(sys.argv[1:]) 
+    command_arguments = SpecSimArgs(parseCommandLine(sys.argv[1:]))
 
     data_frame = pype.DataFrame(command_arguments.ft)
 
-    spectral_widths = getDimensionInfo(data_frame, 'NDSW')           # (2998.046875, 1920.000000)
-    origins = getDimensionInfo(data_frame, 'NDORIG')                 # (3297.501221, 6221.201172)
-    observation_frequencies = getDimensionInfo(data_frame, "NDOBS")  # (598.909973, 60.694000)
-    total_time_points = getTotalSize(data_frame, 'NDTDSIZE')         # (512, 64) 
-    total_freq_points = getTotalSize(data_frame, 'NDFTSIZE')         # (1024, 0)
+    spectral_widths = getDimensionInfo(data_frame, 'NDSW')
+    origins = getDimensionInfo(data_frame, 'NDORIG')
+    observation_frequencies = getDimensionInfo(data_frame, "NDOBS")
+    total_time_points = getTotalSize(data_frame, 'NDTDSIZE')
+    total_freq_points = getTotalSize(data_frame, 'NDFTSIZE')
     
-    scaling_factor = command_arguments.scale
+    phase = (command_arguments.p0, command_arguments.p1)             # p0 and p1 phases of spectrum
+    scaling_factor = command_arguments.scale                         # Scale factor for simulation
+    xOffset = command_arguments.xOff                                 # Frequency x offset for simulation
 
-    user_path = input("Please enter peak table file path: ")
-    test_spectrum = Spectrum(Path(user_path), # Path("data/hsqc/nlin_time.tab") # Path("data/hsqc/master.tab")
+    test_spectrum = Spectrum(Path(command_arguments.tab), # Path("data/hsqc/nlin_time.tab") # Path("data/hsqc/master.tab")
                  spectral_widths,
                  origins,
                  observation_frequencies,
-                 total_time_points)
-
-    print(test_spectrum)
-
-    frequency_pts = test_spectrum.peaks[0].position.x
-    line_width_pts = test_spectrum.peaks[0].linewidths[0]
-    amplitude = test_spectrum.peaks[0].intensity
-    phase = (command_arguments.p0, command_arguments.p1)  # Adjust phase values p0 and p1   
-
-    if test_spectrum.peaks[0].extra_params["X_COSJ"]:
-        cos_mod_j = np.array(test_spectrum.peaks[0].extra_params["X_COSJ"])
-    else:
-        cos_mod_j = None
-    
-    if test_spectrum.peaks[0].extra_params["X_SINJ"]:
-        sin_mod_j = np.array(test_spectrum.peaks[0].extra_params["X_SINJ"])
-    else:
-        sin_mod_j = None
-
-    exp_simulated_data = simExponential1D(total_time_points[0], total_freq_points[0], 0,
-                                          frequency_pts, line_width_pts, 
-                                          cos_mod_values=cos_mod_j,
-                                          sin_mod_values=sin_mod_j,
-                                          amplitude=amplitude, phase=phase,
-                                          scale=scaling_factor)
-    
-    gaus_simulated_data = simGaussian1D(total_time_points[0], total_freq_points[0], 0,
-                                        frequency_pts, line_width_pts,
-                                        cos_mod_values=cos_mod_j,
-                                        sin_mod_values=sin_mod_j,
-                                        amplitude=amplitude, phase=phase,
-                                        scale=scaling_factor)
+                 total_time_points, 
+                 total_freq_points)
 
     demo_data_exponential : np.ndarray = pype.DataFrame("data/demo/sim_time_single_exp.fid").array[0]
     demo_data_gaussian : np.ndarray = pype.DataFrame("data/demo/sim_time_single_gauss.fid").array[0]
 
+    constant_time_region_size = 0
+    num_of_peaks = 0
+
+    exp_simulated_data = test_spectrum.spectralSimulation(simExponential1D, num_of_peaks, constant_time_region_size, phase, xOffset, scaling_factor)
+
+    gaus_simulated_data = test_spectrum.spectralSimulation(simGaussian1D, num_of_peaks, constant_time_region_size, phase, xOffset, scaling_factor)
+    
     # Save exponential simulated data plot to file
     plt.figure()
     plt.plot(demo_data_exponential.real, 'tab:orange', label='original method')
-    plt.plot(exp_simulated_data.real, 'tab:blue', label='specsim')
+    plt.plot(exp_simulated_data[0].real, 'tab:blue', label='specsim')
     plt.legend(loc="upper right")
     plt.savefig(f'simulated_data_ex.png')
 
     # Save Gaussian simulated data plot to file
     plt.figure()
     plt.plot(demo_data_gaussian.real, 'tab:orange', label='original method')
-    plt.plot(gaus_simulated_data.real, 'tab:blue', label='specsim')
+    plt.plot(gaus_simulated_data[0].real, 'tab:blue', label='specsim')
     plt.legend(loc="upper right")
     plt.savefig(f'simulated_data_gx.png')
 
-    exp_simulated_data_ft = np.roll(np.flip(np.fft.fftshift(np.fft.fft(exp_simulated_data))), 1)
-    gaus_simulated_data_ft = np.roll(np.flip(np.fft.fftshift(np.fft.fft(gaus_simulated_data))), 1)
+    exp_simulated_data_ft = fourierTransform(exp_simulated_data[0])
+    gaus_simulated_data_ft = fourierTransform(gaus_simulated_data[0])
 
-    demo_data_exponential_ft = np.roll(np.flip(np.fft.fftshift(np.fft.fft(demo_data_exponential))), 1)
-    demo_data_gaussian_ft = np.roll(np.flip(np.fft.fftshift(np.fft.fft(demo_data_gaussian))), 1)
+    demo_data_exponential_ft = fourierTransform(demo_data_exponential)
+    demo_data_gaussian_ft = fourierTransform(demo_data_gaussian)
 
     # Save exponential simulated data plot to file
     plt.figure()

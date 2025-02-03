@@ -2,8 +2,11 @@ import sys
 import re
 from pathlib import Path
 from ..peak import Peak, Coordinate, Coordinate2D
+import numpy as np
+from typing import Callable, Optional
 
 type File = str | Path
+type ModelFunction = Callable[[int, int, int, float, float, Optional[np.ndarray], Optional[np.ndarray], float, tuple[int, int], float], np.ndarray]
 
 # ---------------------------------------------------------------------------- #
 #                                Spectrum Class                                #
@@ -45,7 +48,9 @@ class Spectrum:
                  spectral_widths : tuple[float,float], 
                  coordinate_origins : tuple[float,float],
                  observation_freqs : tuple[float,float],
-                 total_points : tuple[int, int]):
+                 total_time_points : tuple[int, int],
+                 total_freq_points : tuple[int, int]):
+        
         if type(peak_table_file) == str:
             peak_table = Path(peak_table_file)
         else:
@@ -60,11 +65,144 @@ class Spectrum:
         self._spectral_widths = spectral_widths
         self._coordinate_origins = coordinate_origins
         self._obervation_freqs = observation_freqs
-        self._total_points = total_points
+        self._total_time_points = total_time_points
+        self._total_freq_points = total_freq_points
 
         self.peaks : list[Peak] = self._read_file()
         self._null_string = '*'
         self._null_value = -666
+
+
+    def spectralSimulation(self, model_function : ModelFunction,
+                           peaks_simulated : list[int] | int, 
+                           constant_time_region_size : int = 0,
+                           phase : tuple[int,int] = (0,0),
+                           xOffset : int = 0,
+                           scaling_factor : float = 1.0) -> np.ndarray:
+        """
+        Perform spectral simulation using inputted decay function model
+
+        Parameters
+        ----------
+        model_function : ModelFunction
+            Target modeling function for simulation, e.g. exponential, gaussian
+        peaks_simulated : list[int] | int
+            Number of peaks to simulate or indices of peaks to simulate. 0 simulates entire spectrum
+        constant_time_region_size : int
+            Total number of points in the constain time region (pts) (Default 0)
+        phase : tuple[int,int]
+            p0 and p1 phase values (Default (0,0))
+        xOffset : int
+            Offset of the frequency domain in points (Default 0)
+        scaling_factor : float
+            Simulation time domain data scaling factor (Default 1.0)
+
+        Returns
+        -------
+        np.ndarray
+            Return Simulated Spectrum
+
+        Raises
+        ------
+        TypeError
+            Raises an type error if peaks_simulated is incorrectly inputted
+        """
+        peak_count = -1
+        peak_indices = []
+        usePeakCount = True
+
+        # Use number of peaks if input is integer
+        if type(peaks_simulated) == int:
+            peak_count = peaks_simulated
+            usePeakCount = True
+        # Use index list if input is list
+        elif type(peaks_simulated) == list:
+            peak_indices = [i for i in peaks_simulated if i < len(self.peaks)]
+            usePeakCount = False
+        # Raise error if input does not match integer and list
+        else:
+            raise TypeError("Incorrect Type for Simulation, use a list of indices or an integer count")
+        
+
+
+        # Set range if number of peaks is input
+        if usePeakCount:
+            # Ensure nonzero integer count
+            if peak_count < 0:
+                peak_count = 0
+
+            # Use entire spectrum if peak count is 0 or exceeds maximum
+            if peak_count > len(self.peaks) or peak_count == 0:
+                peak_count = len(self.peaks)
+            peak_indices = range(peak_count)
+
+        spectrum_list = []
+        # Iterate through given peaks in the spectrum
+        for i in peak_indices:
+            spectrum_list.append(self._run_simulation_iteration(model_function, i,
+                                            constant_time_region_size, phase,
+                                            xOffset, scaling_factor))
+            
+        return np.array(spectrum_list)
+
+
+    def _run_simulation_iteration(self, model_function : ModelFunction, 
+                                  index : int, constant_time_region_size : int,
+                                  phase : tuple[int,int], 
+                                  xOffset : int, 
+                                  scaling_factor : float) -> np.ndarray:
+        """
+        Run a single iteration of a spectral time domain simulation.
+
+        Parameters
+        ----------
+        model_function : ModelFunction
+            Model simulation function such as exponential or gaussian
+        index : int
+            Current iteraiton index
+        constant_time_region_size : int
+            Total number of points in the constain time region (pts)
+        phase : tuple[int,int]
+            p0 and p1 phase values
+        xOffset : int
+            Offset of the frequency domain in points
+        scaling_factor : float
+            Simulation time domain data scaling factor
+
+        Returns
+        -------
+        np.ndarray
+            Simulation slice based on model function
+        """
+
+        # Obtain frequency and add offset if necessary
+        frequency_pts = self.peaks[index].position.x + xOffset
+
+        # Collect line width, and intensity
+        line_width_pts = self.peaks[index].linewidths[0]
+        amplitude = self.peaks[index].intensity
+
+        # Collect cosine moduation if it exists
+        if self.peaks[index].extra_params["X_COSJ"]:
+            cos_mod_j = np.array(self.peaks[index].extra_params["X_COSJ"])
+        else:
+            cos_mod_j = None
+        
+        # Collect sine modulation if it exists
+        if self.peaks[index].extra_params["X_SINJ"]:
+            sin_mod_j = np.array(self.peaks[index].extra_params["X_SINJ"])
+        else:
+            sin_mod_j = None
+
+        return(
+            model_function(self._total_time_points[0], self._total_freq_points[0],
+                           constant_time_region_size, frequency_pts,
+                           line_width_pts,
+                           cos_mod_values=cos_mod_j,
+                           sin_mod_values=sin_mod_j,
+                           amplitude=amplitude, phase=phase,
+                           scale=scaling_factor))
+
 
     def _read_file(self) -> list[Peak]:
         """
@@ -148,7 +286,7 @@ class Spectrum:
                 string_to_peak(
                     file_lines.pop(0), self.attributes, self.file, line_number,
                     (self._spectral_widths, self._coordinate_origins,
-                     self._obervation_freqs, self._total_points)))  
+                     self._obervation_freqs, self._total_time_points)))  
 
         return peaks
     

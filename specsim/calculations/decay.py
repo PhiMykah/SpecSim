@@ -17,7 +17,7 @@ def calculate_decay(
 
     Parameters
     ----------
-    simulated_data : np.ndarray [1D array]
+    simulated_data : numpy.ndarray [1D array]
         The simulated data array to modify
     first_data_point : int
         The first data point of the simulated data array
