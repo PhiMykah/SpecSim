@@ -34,6 +34,45 @@ To-do:
 
 """
 
+def plot_1D(file_name : str, *arrays : np.ndarray):
+    """
+    plot a 1D array and save the plot to a file
+
+    Parameters
+    ----------
+    file_name : str
+        Name of the file without the file extension
+    array : numpy.ndarray | list[numpy.ndarray] (1D Array)
+        1D Array(s) to draw with matplotlib
+    """
+    plt.figure()
+    index = 1
+    for array in arrays:
+        plt.plot(array, label=f'plot #{index}')
+        index += 1
+    plt.legend(loc="upper right")
+    plt.savefig(Path(file_name).with_suffix('.png'))
+
+
+def plot_2D(file_name : str, *arrays : np.ndarray):
+    """
+    plot a 2D array and save the plot to a file
+
+    Parameters
+    ----------
+    file_name : str
+        Name of the file without the file extension
+    array : numpy.ndarray | list[numpy.ndarray] (1D Array)
+        2D Array(s) to draw with matplotlib
+    """
+    plt.figure()
+    index = 1
+    for array in arrays:
+        plt.contour(array, label=f'plot #{index}')
+        index += 1
+    plt.legend(loc="upper right")
+    plt.savefig(Path(file_name).with_suffix('.png'))
+
 # ---------------------------------------------------------------------------- #
 #                                     Main                                     #
 # ---------------------------------------------------------------------------- #
@@ -71,38 +110,28 @@ def main() -> int:
     gaus_simulated_data = test_spectrum.spectralSimulation(simGaussian1D, num_of_peaks, constant_time_region_size, phase, xOffset, scaling_factor)
     
     # Save exponential simulated data plot to file
-    plt.figure()
-    plt.plot(demo_data_exponential.real, 'tab:orange', label='original method')
-    plt.plot(exp_simulated_data[0].real, 'tab:blue', label='specsim')
-    plt.legend(loc="upper right")
-    plt.savefig(f'simulated_data_ex.png')
+    plot_1D("simulated_data_ex", exp_simulated_data[0].real, demo_data_exponential.real)
 
     # Save Gaussian simulated data plot to file
-    plt.figure()
-    plt.plot(demo_data_gaussian.real, 'tab:orange', label='original method')
-    plt.plot(gaus_simulated_data[0].real, 'tab:blue', label='specsim')
-    plt.legend(loc="upper right")
-    plt.savefig(f'simulated_data_gx.png')
+    plot_1D("simulated_data_gx", gaus_simulated_data[0].real, demo_data_gaussian.real)
 
-    exp_simulated_data_ft = fourierTransform(exp_simulated_data[0])
-    gaus_simulated_data_ft = fourierTransform(gaus_simulated_data[0])
+    exp_simulated_data_ft = fourierTransform(exp_simulated_data)
+    gaus_simulated_data_ft = fourierTransform(gaus_simulated_data)
 
     demo_data_exponential_ft = fourierTransform(demo_data_exponential)
     demo_data_gaussian_ft = fourierTransform(demo_data_gaussian)
 
     # Save exponential simulated data plot to file
-    plt.figure()
-    plt.plot(demo_data_exponential_ft.real, 'tab:orange', label='original method')
-    plt.plot(exp_simulated_data_ft.real, 'tab:blue', label='specsim')
-    plt.legend(loc="upper right")
-    plt.savefig(f'simulated_data_ex_ft.png')
+    plot_1D("simulated_data_ex_ft", exp_simulated_data_ft[0].real, demo_data_exponential_ft.real)
 
     # Save Gaussian simulated data plot to file
-    plt.figure()
-    plt.plot(demo_data_gaussian_ft.real, 'tab:orange', label='original method')
-    plt.plot(gaus_simulated_data_ft.real, 'tab:blue', label='specsim')
-    plt.legend(loc="upper right")
-    plt.savefig(f'simulated_data_gx_ft.png')
+    plot_1D("simulated_data_gx_ft", gaus_simulated_data_ft[0].real, demo_data_gaussian_ft.real)
+
+    if exp_simulated_data_ft.ndim > 1:
+        plot_2D("simulated_data_ex_ft_full", exp_simulated_data_ft.real)
+
+    if gaus_simulated_data_ft.ndim > 1:
+        plot_2D("simulated_data_gx_ft_full", gaus_simulated_data_ft.real)
 
 # ---------------------------------------------------------------------------- #
 #                                 Main Function                                #
