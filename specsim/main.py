@@ -5,16 +5,13 @@ from matplotlib import pyplot as plt
 import nmrPype as pype
 
 # Command-line parsing  
-from specsim import parseCommandLine, SpecSimArgs, getDimensionInfo, getTotalSize
+from specsim import parse_command_line, SpecSimArgs, get_dimension_info, get_total_size
 
 # Simulation Models
-from specsim import simExponential1D, simGaussian1D     
+from specsim import sim_exponential_1D, sim_gaussian_1D     
 
 # Spectrum Generation
 from specsim import Spectrum
-
-# Spectrum Modification
-from specsim import fourierTransform
 
 """
 1. Gaussian decay model where each peak has adjustable phase.
@@ -73,24 +70,59 @@ def plot_2D(file_name : str, *arrays : np.ndarray):
     plt.legend(loc="upper right")
     plt.savefig(Path(file_name).with_suffix('.png'))
 
+
+def adjust_dimensions(simulated_data : np.ndarray, target_shape : tuple) -> np.ndarray:
+    """
+    Adjust the dimensions of the simulated data to match the dimensions of given shape
+
+    Parameters
+    ----------
+    simulated_data : numpy.ndarray
+        Simulated data to adjust dimensions
+    target_shape : tuple
+        Target dimensions of the data to modify
+
+    Returns
+    -------
+    numpy.ndarray
+        Trimmed or expanded numpy array based on necessary modification
+    """
+    if simulated_data.shape == target_shape:
+        return simulated_data
+    elif simulated_data.size < np.prod(target_shape):
+        # If simulated data has fewer elements, pad with zeros
+        adjusted_data = np.broadcast_to(simulated_data, target_shape)
+        return adjusted_data
+    else:
+        # If simulated data has more elements, truncate the excess
+        return simulated_data.flat[:np.prod(target_shape)].reshape(target_shape)
+
 # ---------------------------------------------------------------------------- #
 #                                     Main                                     #
 # ---------------------------------------------------------------------------- #
 
 def main() -> int:
-    command_arguments = SpecSimArgs(parseCommandLine(sys.argv[1:]))
+    # Parse command-line
+    command_arguments = SpecSimArgs(parse_command_line(sys.argv[1:]))
+    data_frame = pype.DataFrame(command_arguments.ft2) # Spectrum nmrpype format data
+    interferogram = pype.DataFrame(command_arguments.ft1) # interferogram nmrpype format data
 
-    data_frame = pype.DataFrame(command_arguments.ft)
+    # --------------------------- Simulation Parameters -------------------------- #
+    axis_count = 2
+    spectral_widths = get_dimension_info(data_frame, 'NDSW')
+    origins = get_dimension_info(data_frame, 'NDORIG')
+    observation_frequencies = get_dimension_info(data_frame, "NDOBS")
+    total_time_points = get_total_size(data_frame, 'NDTDSIZE')
+    total_freq_points = get_total_size(data_frame, 'NDFTSIZE')
+    phase = (command_arguments.p0, command_arguments.p1)    # p0 and p1 phases of spectrum
+    phases = [phase, phase]                                 # Phase values for x-axis and y-axis
+    scaling_factors = [command_arguments.scale, 1.0]          # Time domain x and y scaling values
+    offsets = [command_arguments.xOff, 0]                   # Frequency x and y offset for simulation                             
+    constant_time_region_sizes = [0,0]                      # Size of x and y constant time regions
+    peak_count = 0                                          # Number of peaks to simulate
+    domain = 'ft1'                                          # Domain of simulation data
 
-    spectral_widths = getDimensionInfo(data_frame, 'NDSW')
-    origins = getDimensionInfo(data_frame, 'NDORIG')
-    observation_frequencies = getDimensionInfo(data_frame, "NDOBS")
-    total_time_points = getTotalSize(data_frame, 'NDTDSIZE')
-    total_freq_points = getTotalSize(data_frame, 'NDFTSIZE')
-    
-    phase = (command_arguments.p0, command_arguments.p1)             # p0 and p1 phases of spectrum
-    scaling_factor = command_arguments.scale                         # Scale factor for simulation
-    xOffset = command_arguments.xOff                                 # Frequency x offset for simulation
+    # ------------------------------ Spectrum Class ------------------------------ #
 
     test_spectrum = Spectrum(Path(command_arguments.tab), # Path("data/hsqc/nlin_time.tab") # Path("data/hsqc/master.tab")
                  spectral_widths,
@@ -99,39 +131,47 @@ def main() -> int:
                  total_time_points, 
                  total_freq_points)
 
-    demo_data_exponential : np.ndarray = pype.DataFrame("data/demo/sim_time_single_exp.fid").array[0]
-    demo_data_gaussian : np.ndarray = pype.DataFrame("data/demo/sim_time_single_gauss.fid").array[0]
+    # ------------------------------ Run Simulation ------------------------------ #
 
-    constant_time_region_size = 0
-    num_of_peaks = 0
+    exp_simulated_data = test_spectrum.spectral_simulation(
+        sim_exponential_1D, axis_count,
+        peak_count, domain, constant_time_region_sizes,
+        phases, offsets, scaling_factors)
 
-    exp_simulated_data = test_spectrum.spectralSimulation(simExponential1D, num_of_peaks, constant_time_region_size, phase, xOffset, scaling_factor)
+    gaus_simulated_data = test_spectrum.spectral_simulation(
+        sim_gaussian_1D, axis_count,
+        peak_count, domain, constant_time_region_sizes,
+        phases, offsets, scaling_factors)
 
-    gaus_simulated_data = test_spectrum.spectralSimulation(simGaussian1D, num_of_peaks, constant_time_region_size, phase, xOffset, scaling_factor)
-    
-    # Save exponential simulated data plot to file
-    plot_1D("simulated_data_ex", exp_simulated_data[0].real, demo_data_exponential.real)
-
-    # Save Gaussian simulated data plot to file
-    plot_1D("simulated_data_gx", gaus_simulated_data[0].real, demo_data_gaussian.real)
-
-    exp_simulated_data_ft = fourierTransform(exp_simulated_data)
-    gaus_simulated_data_ft = fourierTransform(gaus_simulated_data)
-
-    demo_data_exponential_ft = fourierTransform(demo_data_exponential)
-    demo_data_gaussian_ft = fourierTransform(demo_data_gaussian)
+    # ------------------------------ Plot Simulation ----------------------------- #
 
     # Save exponential simulated data plot to file
-    plot_1D("simulated_data_ex_ft", exp_simulated_data_ft[0].real, demo_data_exponential_ft.real)
+    plot_1D(f"simulated_data_ex_{domain}", exp_simulated_data[0].real)
 
     # Save Gaussian simulated data plot to file
-    plot_1D("simulated_data_gx_ft", gaus_simulated_data_ft[0].real, demo_data_gaussian_ft.real)
+    plot_1D(f"simulated_data_gx_{domain}", gaus_simulated_data[0].real)
 
-    if exp_simulated_data_ft.ndim > 1:
-        plot_2D("simulated_data_ex_ft_full", exp_simulated_data_ft.real)
+    if exp_simulated_data.ndim > 1:
+        if exp_simulated_data.shape[0] >= 2 and exp_simulated_data.shape[1] >= 2:
+            plot_2D(f"simulated_data_ex_{domain}_full", exp_simulated_data.real)
 
-    if gaus_simulated_data_ft.ndim > 1:
-        plot_2D("simulated_data_gx_ft_full", gaus_simulated_data_ft.real)
+    if gaus_simulated_data.ndim > 1:
+        if exp_simulated_data.shape[0] >= 2 and exp_simulated_data.shape[1] >= 2:
+            plot_2D(f"simulated_data_gx_{domain}full", gaus_simulated_data.real)
+
+    # Adjust the dimensions of the simulated data
+    # exp_simulated_data = adjust_dimensions(exp_simulated_data, interferogram.array.shape)
+    # gaus_simulated_data = adjust_dimensions(gaus_simulated_data, interferogram.array.shape)
+
+    # exp_simulated_data = np.broadcast_to(np.sum(exp_simulated_data, axis=0).real, interferogram.array.shape)
+    # gaus_simulated_data =  np.broadcast_to(np.sum(gaus_simulated_data, axis=0).real, interferogram.array.shape)
+
+    interferogram.setArray(exp_simulated_data)
+    pype.write_to_file(interferogram, "test_sim_ex.ft1", True)
+
+    interferogram.setArray(gaus_simulated_data)
+    pype.write_to_file(interferogram, "test_sim_gaus.ft1", True)
+
 
 # ---------------------------------------------------------------------------- #
 #                                 Main Function                                #

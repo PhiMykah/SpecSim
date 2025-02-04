@@ -3,11 +3,12 @@ import argparse
 from random import randint
 import nmrPype as pype
 
-def parseCommandLine(argument_list : str) -> argparse.Namespace:
+def parse_command_line(argument_list : str) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description='specsim: simulate NMR spectral simulator')
     parser.add_argument('-tab', type=str, default='master.tab', help='Peak Table Input.')
     parser.add_argument('-fid', type=str, default='test.fid', help='NMRPipe-format Time-Domain Input.')
-    parser.add_argument('-ft', type=str, default='test.ft1', help='Corresponding NMRPipe-format Freq-Domain Input.')
+    parser.add_argument('-ft1', type=str, default='test.ft1', help='Corresponding NMRPipe-format Interferogram Input.')
+    parser.add_argument('-ft2', type=str, default='test.ft2', help='Corresponding NMRPipe-format Freq-Domain Input.')
     parser.add_argument('-apod', type=str, default=None, help='Optional NMRPipe-format Apodization Profile.')
     parser.add_argument('-out', type=str, default=None, help='NMRPipe-format Time-Domain Output, or Keyword None.')
     parser.add_argument('-res', type=str, default=None, help='NMRPipe-format Time-Domain Residual, or Keyword None.')
@@ -42,7 +43,7 @@ def parseCommandLine(argument_list : str) -> argparse.Namespace:
 
     return parser.parse_args(argument_list)
 
-def getDimensionInfo(data_frame: pype.DataFrame, data_type : str) -> tuple[float, float]:
+def get_dimension_info(data_frame: pype.DataFrame, data_type : str) -> tuple[float, float]:
     """
     Obtain x-dimension and y-dimension information from the data frame.
 
@@ -60,7 +61,7 @@ def getDimensionInfo(data_frame: pype.DataFrame, data_type : str) -> tuple[float
     """
     return (data_frame.getParam(data_type, 1), data_frame.getParam(data_type, 2))
 
-def getTotalSize(data_frame : pype.DataFrame, header_key : str) -> tuple[int, int]:
+def get_total_size(data_frame : pype.DataFrame, header_key : str) -> tuple[int, int]:
     """
     Obtain the total size of the data frame.
 
@@ -77,7 +78,7 @@ def getTotalSize(data_frame : pype.DataFrame, header_key : str) -> tuple[int, in
     tuple[int, int]
         Total size of the data frame
     """
-    return tuple(map(int, getDimensionInfo(data_frame, header_key)))
+    return tuple(map(int, get_dimension_info(data_frame, header_key)))
 
 class SpecSimArgs:
     """
@@ -89,7 +90,9 @@ class SpecSimArgs:
         Path to the tabulated data file.
     fid : str
         Path to the FID data file.
-    ft : str
+    ft1 : str
+        Path to the Interferogram data file
+    ft2 : str
         Path to the Fourier transformed data file.
     apod : str
         Apodization function to be applied.
@@ -157,7 +160,8 @@ class SpecSimArgs:
     def __init__(self, args: argparse.Namespace):
         self.tab: str = args.tab
         self.fid: str = args.fid
-        self.ft: str = args.ft
+        self.ft1: str = args.ft1
+        self.ft2: str = args.ft2
         self.apod: str = args.apod
         self.out: str = args.out
         self.res: str = args.res
@@ -201,6 +205,6 @@ class SpecSimArgs:
                 f"notdj={self.notdj})")
         
 if __name__ == "__main__":
-    args = parseCommandLine(sys.argv[1:])
+    args = parse_command_line(sys.argv[1:])
     specsim_args = SpecSimArgs(args)
     print(specsim_args)

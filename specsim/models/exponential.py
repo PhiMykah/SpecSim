@@ -1,7 +1,7 @@
 import numpy as np
 from ..calculations import calculate_decay, calculate_couplings
 
-def simExponential1D(
+def sim_exponential_1D(
         time_domain_size : int,
         frequency_domain_size : int, 
         consant_time_region_size : int, 
@@ -49,9 +49,9 @@ def simExponential1D(
 
     # If the amplitude is zero, time domain size is zero, or frequency domain size is zero, return a zero array
     if (amplitude == 0) or (time_domain_size == 0) or (frequency_domain_size == 0):
-        return np.zeros(time_domain_size, dtype=np.complex128)
+        return np.zeros(time_domain_size, dtype=np.complex64)
     
-    simulated_data = np.zeros(time_domain_size, dtype=np.complex128)
+    simulated_data = np.zeros(time_domain_size, dtype=np.complex64)
     
     # Ensure line width is positive
     line_width_pts = abs(line_width_pts)

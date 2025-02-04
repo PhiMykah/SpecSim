@@ -1,6 +1,6 @@
 import numpy as np
 
-def fourierTransform(array : np.ndarray) -> np.ndarray:
+def fourier_transform(array : np.ndarray) -> np.ndarray:
     """
     Perform a fourier transform on the inputted array
 

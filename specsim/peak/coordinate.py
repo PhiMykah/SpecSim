@@ -484,3 +484,19 @@ class Coordinate2D():
                f"integral_index={self.integral_index}, " \
                f"x={self.x}, " \
                f"y={self.y})"
+
+    def __getitem__(self, key):
+            if key == 0:
+                return self._x
+            elif key == 1:
+                return self._y
+            else:
+                raise IndexError("Index out of range. Valid indices are 0 and 1.")
+
+    def __setitem__(self, key, value):
+        if key == 0:
+            self._x = value
+        elif key == 1:
+            self._y = value
+        else:
+            raise IndexError("Index out of range. Valid indices are 0 and 1.")

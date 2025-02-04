@@ -2,11 +2,16 @@ import sys
 import re
 from pathlib import Path
 from ..peak import Peak, Coordinate, Coordinate2D
+from ..calculations import fourier_transform
 import numpy as np
-from typing import Callable, Optional
+from typing import Callable, Optional, Annotated
 
 type File = str | Path
 type ModelFunction = Callable[[int, int, int, float, float, Optional[np.ndarray], Optional[np.ndarray], float, tuple[int, int], float], np.ndarray]
+
+# Axes
+X = 0 # First index for x-axis
+Y = 1 # Second index for y-axis
 
 # ---------------------------------------------------------------------------- #
 #                                Spectrum Class                                #
@@ -72,12 +77,73 @@ class Spectrum:
         self._null_string = '*'
         self._null_value = -666
 
+    def spectral_simulation(self, model_function : ModelFunction, 
+                            axis_count : int = 2,
+                            peaks_simulated : list[int] | int = 0, 
+                            domain : str = 'ft1',
+                            constant_time_region_sizes : Annotated[list[int], 2] = [0, 0],
+                            phase_values : Annotated[list[tuple[int,int]], 2] = [(0,0),(0,0)],
+                            offsets : Annotated[list[int], 2] = [0,0],
+                            scaling_factors : Annotated[list[float], 2] = [1.0, 1.0]):
+        """
+        Simulates a multi-dimensional spectrum based on the provided model function and parameters.
 
-    def spectralSimulation(self, model_function : ModelFunction,
-                           peaks_simulated : list[int] | int, 
+        Parameters
+        ----------
+        model_function : ModelFunction
+            The model function used for spectral simulation.
+        axis_count : int, optional
+            Number of axes to simulate, by default 2
+        peaks_simulated : list[int] | int, optional
+            Number of peaks to simulate or indices of peaks to simulate, by default entire spectrum
+                - 0 simulates entire spectrum
+        domain : str, optional
+            The domain in which the simulation is performed, by default 'ft1'.
+                - 'fid' for time-domain
+                - 'ft1' for interferrogram
+                - 'ft2' for full spectrum
+        constant_time_region_sizes : Annotated[list[int], 2], optional
+            Total number of points in the constain time regions (pts), by default [0, 0]
+        phase_values : Annotated[list[tuple[int,int]], 2], optional
+            multi-axis p0 and p1 phase correction values, by default [(0,0),(0,0)]
+        offsets : Annotated[list[int], 2], optional
+            multi-axis offset values of the frequency domain in points, by default [0,0]
+        scaling_factors : Annotated[list[float], 2], optional
+            multi-axis simulation time domain data scaling factor, by default [1.0, 1.0]
+        """
+        if not (axis_count == len(constant_time_region_sizes) == len(phase_values) == len(offsets) == len(scaling_factors)):
+            raise ValueError(f"Axis count and parameter lengths do not match: "
+                             f"axis_count={axis_count}, " 
+                             f"constant_time_region_sizes={len(constant_time_region_sizes)}, "
+                             f"phase_values={len(phase_values)}, "
+                             f"offsets={len(offsets)}, "
+                             f"scaling_factors={len(scaling_factors)}")
+        simulations : list[np.ndarray] = []
+        for axis in range(axis_count):
+            sim_1D = self.spectral_simulation1D(model_function, peaks_simulated, axis,
+                                           constant_time_region_sizes[axis],
+                                           phase_values[axis],
+                                           offsets[axis],
+                                           scaling_factors[axis])
+            sim_1D = np.sum(sim_1D, axis=0)
+            simulations.append(sim_1D)
+
+        if domain == 'ft1' and axis_count >= 2:
+            simulations[0] = fourier_transform(simulations[0])
+        if domain == 'ft2' and axis_count >= 2:
+            simulations[1] = fourier_transform(simulations[1])
+            
+        if axis_count == 2:
+            simulations_2D = np.outer(simulations[1], simulations[0])
+            return simulations_2D
+        return simulations
+
+    def spectral_simulation1D(self, model_function : ModelFunction,
+                           peaks_simulated : list[int] | int = 0, 
+                           axis : int = X,
                            constant_time_region_size : int = 0,
                            phase : tuple[int,int] = (0,0),
-                           xOffset : int = 0,
+                           offset : int = 0,
                            scaling_factor : float = 1.0) -> np.ndarray:
         """
         Perform spectral simulation using inputted decay function model
@@ -87,15 +153,18 @@ class Spectrum:
         model_function : ModelFunction
             Target modeling function for simulation, e.g. exponential, gaussian
         peaks_simulated : list[int] | int
-            Number of peaks to simulate or indices of peaks to simulate. 0 simulates entire spectrum
+            Number of peaks to simulate or indices of peaks to simulate. by default 0
+                - 0 simulates entire spectrum
+        axis : int
+            Designated axis to simulate, e.g. 0 for 'x', 1 for 'y'.
         constant_time_region_size : int
-            Total number of points in the constain time region (pts) (Default 0)
+            Total number of points in the constain time region (pts), by default 0
         phase : tuple[int,int]
-            p0 and p1 phase values (Default (0,0))
-        xOffset : int
-            Offset of the frequency domain in points (Default 0)
+            p0 and p1 phase correction values, by default (0,0)
+        offset : int
+            Offset of the frequency domain in points, by default 0
         scaling_factor : float
-            Simulation time domain data scaling factor (Default 1.0)
+            Simulation time domain data scaling factor, by default 1.0
 
         Returns
         -------
@@ -140,16 +209,16 @@ class Spectrum:
         # Iterate through given peaks in the spectrum
         for i in peak_indices:
             spectrum_list.append(self._run_simulation_iteration(model_function, i,
-                                            constant_time_region_size, phase,
-                                            xOffset, scaling_factor))
+                                            axis, constant_time_region_size, phase,
+                                            offset, scaling_factor))
             
         return np.array(spectrum_list)
 
 
     def _run_simulation_iteration(self, model_function : ModelFunction, 
-                                  index : int, constant_time_region_size : int,
+                                  index : int, axis : int, constant_time_region_size : int,
                                   phase : tuple[int,int], 
-                                  xOffset : int, 
+                                  offset : int, 
                                   scaling_factor : float) -> np.ndarray:
         """
         Run a single iteration of a spectral time domain simulation.
@@ -160,11 +229,13 @@ class Spectrum:
             Model simulation function such as exponential or gaussian
         index : int
             Current iteraiton index
+        axis : str
+            Designated axis to simulate, e.g. 0 for 'x', 1 for 'y'.
         constant_time_region_size : int
             Total number of points in the constain time region (pts)
         phase : tuple[int,int]
-            p0 and p1 phase values
-        xOffset : int
+            p0 and p1 phase correction values
+        offset : int
             Offset of the frequency domain in points
         scaling_factor : float
             Simulation time domain data scaling factor
@@ -175,27 +246,35 @@ class Spectrum:
             Simulation slice based on model function
         """
 
+        if axis not in [X, Y]:
+            TypeError("Incorrect Axis Type for Simulation, please enter a supported axis type.")
+
         # Obtain frequency and add offset if necessary
-        frequency_pts = self.peaks[index].position.x + xOffset
+        frequency_pts = self.peaks[index].position[axis] + offset
 
         # Collect line width, and intensity
-        line_width_pts = self.peaks[index].linewidths[0]
+        line_width_pts = self.peaks[index].linewidths[axis]
+
         amplitude = self.peaks[index].intensity
 
+        # Set modulation axis to X, Y, etc
+        cosine_modulation = f"{chr(axis + ord('X'))}_COSJ"
+        sine_modulation = f"{chr(axis + ord('X'))}_SINJ"
+
         # Collect cosine moduation if it exists
-        if self.peaks[index].extra_params["X_COSJ"]:
-            cos_mod_j = np.array(self.peaks[index].extra_params["X_COSJ"])
+        if self.peaks[index].extra_params[cosine_modulation]:
+            cos_mod_j = np.array(self.peaks[index].extra_params[cosine_modulation])
         else:
             cos_mod_j = None
         
         # Collect sine modulation if it exists
-        if self.peaks[index].extra_params["X_SINJ"]:
-            sin_mod_j = np.array(self.peaks[index].extra_params["X_SINJ"])
+        if self.peaks[index].extra_params[sine_modulation]:
+            sin_mod_j = np.array(self.peaks[index].extra_params[sine_modulation])
         else:
             sin_mod_j = None
 
         return(
-            model_function(self._total_time_points[0], self._total_freq_points[0],
+            model_function(self._total_time_points[axis], self._total_freq_points[axis],
                            constant_time_region_size, frequency_pts,
                            line_width_pts,
                            cos_mod_values=cos_mod_j,

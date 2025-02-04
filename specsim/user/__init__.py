@@ -1,4 +1,4 @@
-from .parse import parseCommandLine
+from .parse import parse_command_line
 from .parse import SpecSimArgs
-from .parse import getDimensionInfo
-from .parse import getTotalSize
+from .parse import get_dimension_info
+from .parse import get_total_size

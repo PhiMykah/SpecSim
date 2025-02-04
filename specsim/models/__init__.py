@@ -1,2 +1,2 @@
-from .exponential import simExponential1D
-from .gaussian import simGaussian1D
+from .exponential import sim_exponential_1D
+from .gaussian import sim_gaussian_1D
