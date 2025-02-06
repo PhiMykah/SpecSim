@@ -105,8 +105,9 @@ def main() -> int:
     # Parse command-line
     command_arguments = SpecSimArgs(parse_command_line(sys.argv[1:]))
     data_frame = pype.DataFrame(command_arguments.ft2) # Spectrum nmrpype format data
-    interferogram = pype.DataFrame(command_arguments.ft1) # interferogram nmrpype format data
-    data_fid = pype.DataFrame(command_arguments.fid) 
+    interferogram = pype.DataFrame(command_arguments.ft1) # Interferogram nmrpype format data
+    data_fid = pype.DataFrame(command_arguments.fid)  # Full time-domain nmrpype format data
+    output_file = command_arguments.out # Output file nmrpype format data
 
     # --------------------------- Simulation Parameters -------------------------- #
     axis_count = 2
@@ -121,7 +122,13 @@ def main() -> int:
     offsets = [command_arguments.xOff, 0]                   # Frequency x and y offset for simulation                             
     constant_time_region_sizes = [0,0]                      # Size of x and y constant time regions
     peak_count = 0                                          # Number of peaks to simulate
-    domain = 'ft1'                                          # Domain of simulation data
+    domain = "ft1"                                          # Domain of simulation data
+    if output_file != None:
+        suffix = Path(output_file).suffix
+        if suffix:
+            domain = suffix                                 # Domain of simulation data    
+    else:
+        output_file = f"test_sim.{domain}"
 
     # ------------------------------ Spectrum Class ------------------------------ #
 
@@ -146,26 +153,19 @@ def main() -> int:
 
     # ------------------------------ Plot Simulation ----------------------------- #
 
-    # Save exponential simulated data plot to file
-    plot_1D(f"simulated_data_ex_{domain}", exp_simulated_data[0].real)
+    # # Save exponential simulated data plot to file
+    # plot_1D(f"simulated_data_ex_{domain}", exp_simulated_data[0].real)
 
-    # Save Gaussian simulated data plot to file
-    plot_1D(f"simulated_data_gx_{domain}", gaus_simulated_data[0].real)
+    # # Save Gaussian simulated data plot to file
+    # plot_1D(f"simulated_data_gx_{domain}", gaus_simulated_data[0].real)
 
-    if exp_simulated_data.ndim > 1:
-        if exp_simulated_data.shape[0] >= 2 and exp_simulated_data.shape[1] >= 2:
-            plot_2D(f"simulated_data_ex_{domain}_full", exp_simulated_data.real)
+    # if exp_simulated_data.ndim > 1:
+    #     if exp_simulated_data.shape[0] >= 2 and exp_simulated_data.shape[1] >= 2:
+    #         plot_2D(f"simulated_data_ex_{domain}_full", exp_simulated_data.real)
 
-    if gaus_simulated_data.ndim > 1:
-        if exp_simulated_data.shape[0] >= 2 and exp_simulated_data.shape[1] >= 2:
-            plot_2D(f"simulated_data_gx_{domain}full", gaus_simulated_data.real)
-
-    # Adjust the dimensions of the simulated data
-    # exp_simulated_data = adjust_dimensions(exp_simulated_data, interferogram.array.shape)
-    # gaus_simulated_data = adjust_dimensions(gaus_simulated_data, interferogram.array.shape)
-
-    # exp_simulated_data = np.broadcast_to(np.sum(exp_simulated_data, axis=0).real, interferogram.array.shape)
-    # gaus_simulated_data =  np.broadcast_to(np.sum(gaus_simulated_data, axis=0).real, interferogram.array.shape)
+    # if gaus_simulated_data.ndim > 1:
+    #     if exp_simulated_data.shape[0] >= 2 and exp_simulated_data.shape[1] >= 2:
+    #         plot_2D(f"simulated_data_gx_{domain}full", gaus_simulated_data.real)
 
     if domain == "fid":
         output_df = data_fid
@@ -176,11 +176,28 @@ def main() -> int:
     else:
         raise TypeError("Invalid nmrpipe data output format!")
 
-    output_df.setArray(exp_simulated_data)
-    pype.write_to_file(output_df, f"test_sim_ex.{domain}", True)
+    exp_comparison_data = output_df
+    gaus_comparison_data = output_df
 
+    exp_difference = exp_simulated_data - exp_comparison_data.array
+    output_df.setArray(exp_simulated_data)
+    exp_comparison_data.setArray(exp_difference)
+
+    simulation_model : str = 'ex'
+    output_file_path = Path(output_file).stem + f"_{simulation_model}" + f".{domain}"
+    pype.write_to_file(output_df, output_file_path, True)
+    difference_file_path = Path(output_file).stem + f"_diff" + f"_{simulation_model}" + f".{domain}"
+    pype.write_to_file(exp_comparison_data, difference_file_path, True)
+
+    gaus_difference = gaus_simulated_data - gaus_comparison_data.array
     output_df.setArray(gaus_simulated_data)
-    pype.write_to_file(output_df, f"test_sim_gaus.{domain}", True)
+    gaus_comparison_data.setArray(gaus_difference)
+
+    simulation_model : str = 'gaus'
+    output_file_path = Path(output_file).stem + f"_{simulation_model}" + f".{domain}"
+    pype.write_to_file(output_df, output_file_path, True)
+    difference_file_path = Path(output_file).stem + f"_diff" + f"_{simulation_model}" + f".{domain}"
+    pype.write_to_file(gaus_comparison_data, difference_file_path, True)
 
 # ---------------------------------------------------------------------------- #
 #                                 Main Function                                #
