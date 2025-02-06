@@ -106,6 +106,7 @@ def main() -> int:
     command_arguments = SpecSimArgs(parse_command_line(sys.argv[1:]))
     data_frame = pype.DataFrame(command_arguments.ft2) # Spectrum nmrpype format data
     interferogram = pype.DataFrame(command_arguments.ft1) # interferogram nmrpype format data
+    data_fid = pype.DataFrame(command_arguments.fid) 
 
     # --------------------------- Simulation Parameters -------------------------- #
     axis_count = 2
@@ -134,12 +135,12 @@ def main() -> int:
     # ------------------------------ Run Simulation ------------------------------ #
 
     exp_simulated_data = test_spectrum.spectral_simulation(
-        sim_exponential_1D, axis_count,
+        sim_exponential_1D, data_frame, axis_count,
         peak_count, domain, constant_time_region_sizes,
         phases, offsets, scaling_factors)
 
     gaus_simulated_data = test_spectrum.spectral_simulation(
-        sim_gaussian_1D, axis_count,
+        sim_gaussian_1D, data_frame, axis_count,
         peak_count, domain, constant_time_region_sizes,
         phases, offsets, scaling_factors)
 
@@ -166,12 +167,20 @@ def main() -> int:
     # exp_simulated_data = np.broadcast_to(np.sum(exp_simulated_data, axis=0).real, interferogram.array.shape)
     # gaus_simulated_data =  np.broadcast_to(np.sum(gaus_simulated_data, axis=0).real, interferogram.array.shape)
 
-    interferogram.setArray(exp_simulated_data)
-    pype.write_to_file(interferogram, "test_sim_ex.ft1", True)
+    if domain == "fid":
+        output_df = data_fid
+    elif domain == "ft1":
+        output_df = interferogram
+    elif domain == 'ft2':
+        output_df = data_frame
+    else:
+        raise TypeError("Invalid nmrpipe data output format!")
 
-    interferogram.setArray(gaus_simulated_data)
-    pype.write_to_file(interferogram, "test_sim_gaus.ft1", True)
+    output_df.setArray(exp_simulated_data)
+    pype.write_to_file(output_df, f"test_sim_ex.{domain}", True)
 
+    output_df.setArray(gaus_simulated_data)
+    pype.write_to_file(output_df, f"test_sim_gaus.{domain}", True)
 
 # ---------------------------------------------------------------------------- #
 #                                 Main Function                                #

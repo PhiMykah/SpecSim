@@ -2,8 +2,9 @@ import sys
 import re
 from pathlib import Path
 from ..peak import Peak, Coordinate, Coordinate2D
-from ..calculations import fourier_transform
+from ..calculations import fourier_transform, zero_fill, extract_region
 import numpy as np
+import nmrPype as pype
 from typing import Callable, Optional, Annotated
 
 type File = str | Path
@@ -78,6 +79,7 @@ class Spectrum:
         self._null_value = -666
 
     def spectral_simulation(self, model_function : ModelFunction, 
+                            spectrum_data_frame : pype.DataFrame,
                             axis_count : int = 2,
                             peaks_simulated : list[int] | int = 0, 
                             domain : str = 'ft1',
@@ -92,6 +94,8 @@ class Spectrum:
         ----------
         model_function : ModelFunction
             The model function used for spectral simulation.
+        spectrum_data_frame : nmrPype.DataFrame
+            nmrpype format data to obtain header information from
         axis_count : int, optional
             Number of axes to simulate, by default 2
         peaks_simulated : list[int] | int, optional
@@ -128,10 +132,35 @@ class Spectrum:
             sim_1D = np.sum(sim_1D, axis=0)
             simulations.append(sim_1D)
 
+        # Interleave real and imaginary values in indirect dimensions
+        if len(simulations) > 1:
+            for i in range(1, len(simulations)):
+                if np.iscomplexobj(simulations[i]):
+                    interleaved_data = np.empty((simulations[i].size * 2,), dtype=simulations[i].real.dtype)
+                    interleaved_data[0::2] = simulations[i].real
+                    interleaved_data[1::2] = simulations[i].imag
+                    simulations[i] = interleaved_data
+
+        process_iterations = 0
         if domain == 'ft1' and axis_count >= 2:
-            simulations[0] = fourier_transform(simulations[0])
+            process_iterations = 1
         if domain == 'ft2' and axis_count >= 2:
-            simulations[1] = fourier_transform(simulations[1])
+            process_iterations = 2
+
+        for i in range(process_iterations):
+            # Zero fill if necessary
+            new_size = spectrum_data_frame.getParam("NDFTSIZE", i)
+            if new_size > simulations[i].size:
+                simulations[i] = zero_fill(simulations[i], new_size)
+
+            # Convert to frequency domain
+            simulations[i] = fourier_transform(simulations[i])
+
+            # Extract designated region if necessary
+            first_point = int(spectrum_data_frame.getParam("NDX1"))
+            last_point = int(spectrum_data_frame.getParam("NDXN"))
+            if first_point and last_point:
+                simulations[i] = extract_region(simulations[i], first_point, last_point)
             
         if axis_count == 2:
             simulations_2D = np.outer(simulations[1], simulations[0])
@@ -214,7 +243,6 @@ class Spectrum:
             
         return np.array(spectrum_list)
 
-
     def _run_simulation_iteration(self, model_function : ModelFunction, 
                                   index : int, axis : int, constant_time_region_size : int,
                                   phase : tuple[int,int], 
@@ -282,7 +310,6 @@ class Spectrum:
                            amplitude=amplitude, phase=phase,
                            scale=scaling_factor))
 
-
     def _read_file(self) -> list[Peak]:
         """
         Reads from peak table and strips unnecessary lines from process
@@ -325,9 +352,9 @@ class Spectrum:
                 del file_lines[0]
                 continue
 
-            if line.upper().startswith("REMARK"):
+            if line.upper().startswith("REMARK") or line.upper().startswith("#"):
                 # Collect remarks into a single string
-                self.remarks += re.sub("REMARK( )+", "", line, flags=re.IGNORECASE) + "\n"
+                self.remarks += re.sub("(REMARK|#)( )+", "", line, flags=re.IGNORECASE) + "\n"
                 del file_lines[0]
             elif line.upper().startswith("VARS"):
                 # Collect variable names
