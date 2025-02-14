@@ -59,4 +59,8 @@ def extract_region(array : np.ndarray, first_point : int, last_point : int) -> n
     np.ndarray
         A new array containing the elements from the specified region.
     """
+    if first_point == 0 and last_point == 0:
+        return array
+    if first_point != 0:
+        first_point = first_point - 1 
     return array[first_point:last_point + 1]

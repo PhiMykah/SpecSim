@@ -2,7 +2,7 @@ import sys
 import re
 from pathlib import Path
 from ..peak import Peak, Coordinate, Coordinate2D
-from ..calculations import fourier_transform, zero_fill, extract_region
+from ..calculations import fourier_transform, zero_fill, extract_region, hypercomplex_outer_product
 import numpy as np
 import nmrPype as pype
 from typing import Callable, Optional, Annotated
@@ -132,15 +132,6 @@ class Spectrum:
             sim_1D = np.sum(sim_1D, axis=0)
             simulations.append(sim_1D)
 
-        # Interleave real and imaginary values in indirect dimensions
-        if len(simulations) > 1:
-            for i in range(1, len(simulations)):
-                if np.iscomplexobj(simulations[i]):
-                    interleaved_data = np.empty((simulations[i].size * 2,), dtype=simulations[i].real.dtype)
-                    interleaved_data[0::2] = simulations[i].real
-                    interleaved_data[1::2] = simulations[i].imag
-                    simulations[i] = interleaved_data
-
         process_iterations = 0
         if domain == 'ft1' and axis_count >= 2:
             process_iterations = 1
@@ -149,7 +140,7 @@ class Spectrum:
 
         for i in range(process_iterations):
             # Zero fill if necessary
-            new_size = spectrum_data_frame.getParam("NDFTSIZE", i)
+            new_size = spectrum_data_frame.getParam("NDFTSIZE", i + 1)
             if new_size > simulations[i].size:
                 simulations[i] = zero_fill(simulations[i], new_size)
 
@@ -157,11 +148,23 @@ class Spectrum:
             simulations[i] = fourier_transform(simulations[i])
 
             # Extract designated region if necessary
-            first_point = int(spectrum_data_frame.getParam("NDX1"))
-            last_point = int(spectrum_data_frame.getParam("NDXN"))
+            first_point = int(spectrum_data_frame.getParam("NDX1", i + 1))
+            last_point = int(spectrum_data_frame.getParam("NDXN", i + 1))
             if first_point and last_point:
                 simulations[i] = extract_region(simulations[i], first_point, last_point)
             
+            # Delete imaginary values
+            simulations[i] = simulations[i].real
+
+        # Interleave real and imaginary values in indirect dimensions if complex
+        if len(simulations) > 1:
+            for i in range(1, len(simulations)):
+                if np.iscomplexobj(simulations[i]):
+                    interleaved_data = np.empty((simulations[i].size * 2,), dtype=simulations[i].real.dtype)
+                    interleaved_data[0::2] = simulations[i].real
+                    interleaved_data[1::2] = simulations[i].imag
+                    simulations[i] = interleaved_data
+
         if axis_count == 2:
             simulations_2D = np.outer(simulations[1], simulations[0])
             return simulations_2D
@@ -388,11 +391,13 @@ class Spectrum:
         while file_lines:
             line_number += 1
             # Convert the string to a peak and add it to the list
-            peaks.append(
-                string_to_peak(
+            new_peak = string_to_peak(
                     file_lines.pop(0), self.attributes, self.file, line_number,
                     (self._spectral_widths, self._coordinate_origins,
-                     self._obervation_freqs, self._total_time_points)))  
+                     self._obervation_freqs, self._total_time_points))
+            
+            if new_peak:  
+                peaks.append(new_peak)  
 
         return peaks
     
@@ -416,7 +421,7 @@ def string_to_peak(peak_string : str,
                    spectral_features : tuple[tuple[float, float], 
                                              tuple[float, float], 
                                              tuple[float, float],
-                                             tuple[  int,   int]]) -> Peak:
+                                             tuple[  int,   int]]) -> Peak | None:
     """Convert a string of data into a peak class object.
     Utilizes the attribute dictionary for accurate datatype conversion.
 
@@ -433,11 +438,15 @@ def string_to_peak(peak_string : str,
 
     Returns
     -------
-    Peak
-        New peak container based on string data input
+    Peak | None
+        New peak container based on string data input if created
     """
     peak_data = re.split(r"[,|\s]+", peak_string.strip())
 
+    # If line is empty do not return a peak
+    if len(peak_data) == 1 and not peak_data[0]:
+        return None
+    
     # Ensure that there is enough data for the keys
     if len(attribute_dict) > len(peak_data):
         raise Exception(f"An exception occured reading line {line_number} of the file: {file_name}\nMore VARS than provided data.")

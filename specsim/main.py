@@ -176,28 +176,29 @@ def main() -> int:
     else:
         raise TypeError("Invalid nmrpipe data output format!")
 
-    exp_comparison_data = output_df
-    gaus_comparison_data = output_df
+    # exp_comparison_data = output_df
+    # gaus_comparison_data = output_df
 
-    exp_difference = exp_simulated_data - exp_comparison_data.array
+    # exp_difference = exp_simulated_data - exp_comparison_data.array
+    # exp_comparison_data.setArray(exp_difference)
     output_df.setArray(exp_simulated_data)
-    exp_comparison_data.setArray(exp_difference)
 
     simulation_model : str = 'ex'
     output_file_path = Path(output_file).stem + f"_{simulation_model}" + f".{domain}"
     pype.write_to_file(output_df, output_file_path, True)
-    difference_file_path = Path(output_file).stem + f"_diff" + f"_{simulation_model}" + f".{domain}"
-    pype.write_to_file(exp_comparison_data, difference_file_path, True)
 
-    gaus_difference = gaus_simulated_data - gaus_comparison_data.array
+    # difference_file_path = Path(output_file).stem + f"_diff" + f"_{simulation_model}" + f".{domain}"
+    # pype.write_to_file(exp_comparison_data, difference_file_path, True)
+
+    # gaus_difference = gaus_simulated_data - gaus_comparison_data.array
+    # gaus_comparison_data.setArray(gaus_difference)
     output_df.setArray(gaus_simulated_data)
-    gaus_comparison_data.setArray(gaus_difference)
 
     simulation_model : str = 'gaus'
     output_file_path = Path(output_file).stem + f"_{simulation_model}" + f".{domain}"
     pype.write_to_file(output_df, output_file_path, True)
-    difference_file_path = Path(output_file).stem + f"_diff" + f"_{simulation_model}" + f".{domain}"
-    pype.write_to_file(gaus_comparison_data, difference_file_path, True)
+    # difference_file_path = Path(output_file).stem + f"_diff" + f"_{simulation_model}" + f".{domain}"
+    # pype.write_to_file(gaus_comparison_data, difference_file_path, True)
 
 # ---------------------------------------------------------------------------- #
 #                                 Main Function                                #
