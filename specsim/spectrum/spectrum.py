@@ -2,7 +2,7 @@ import sys
 import re
 from pathlib import Path
 from ..peak import Peak, Coordinate, Coordinate2D
-from ..calculations import fourier_transform, zero_fill, extract_region, hypercomplex_outer_product
+from ..calculations import fourier_transform, zero_fill, extract_region
 import numpy as np
 import nmrPype as pype
 from typing import Callable, Optional, Annotated
