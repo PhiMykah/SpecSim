@@ -1,12 +1,13 @@
 import numpy as np
 from ..calculations import calculate_decay, calculate_couplings
+from ..peak import Coordinate
 
 def sim_exponential_1D(
         time_domain_size : int,
         frequency_domain_size : int, 
         consant_time_region_size : int, 
         frequency_pts : float, 
-        line_width_pts : float, 
+        line_width : Coordinate, 
         cos_mod_values : np.ndarray | None = None, 
         sin_mod_values : np.ndarray | None = None, 
         amplitude : float = 0.0,
@@ -26,8 +27,8 @@ def sim_exponential_1D(
         Number of points in the constant time region (usually 0)
     frequency_pts : float
         Frequency in points
-    line_width_pts : float
-        Line width in points
+    line_width : Coordinate
+        Line width of dimension
     cos_mod_values : numpy.ndarray [1D array] | None
         Cosine modulation frequencies (if any)
     sin_mod_values : numpy.ndarray [1D array] | None
@@ -54,7 +55,7 @@ def sim_exponential_1D(
     simulated_data = np.zeros(time_domain_size, dtype=np.complex64)
     
     # Ensure line width is positive
-    line_width_pts = abs(line_width_pts)
+    line_width_pts = abs(line_width.pts)
 
     # If ctsize is negative set to zero
     if consant_time_region_size < 0:

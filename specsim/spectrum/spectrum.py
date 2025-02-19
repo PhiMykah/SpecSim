@@ -4,6 +4,8 @@ from pathlib import Path
 from ..peak import Peak, Coordinate, Coordinate2D
 from ..calculations import fourier_transform, zero_fill, extract_region
 import numpy as np
+from scipy.optimize import basinhopping, minimize, brute
+
 import nmrPype as pype
 from typing import Callable, Optional, Annotated
 
@@ -70,13 +72,17 @@ class Spectrum:
         self.attributes : dict[str, str] = []
         self._spectral_widths = spectral_widths
         self._coordinate_origins = coordinate_origins
-        self._obervation_freqs = observation_freqs
+        self._observation_freqs = observation_freqs
         self._total_time_points = total_time_points
         self._total_freq_points = total_freq_points
 
         self.peaks : list[Peak] = self._read_file()
         self._null_string = '*'
         self._null_value = -666
+
+    # ---------------------------------------------------------------------------- #
+    #                         Spectral Simulation Functions                        #
+    # ---------------------------------------------------------------------------- #
 
     def spectral_simulation(self, model_function : ModelFunction, 
                             spectrum_data_frame : pype.DataFrame,
@@ -284,7 +290,7 @@ class Spectrum:
         frequency_pts = self.peaks[index].position[axis] + offset
 
         # Collect line width, and intensity
-        line_width_pts = self.peaks[index].linewidths[axis]
+        line_width = self.peaks[index].linewidths[axis]
 
         amplitude = self.peaks[index].intensity
 
@@ -307,11 +313,15 @@ class Spectrum:
         return(
             model_function(self._total_time_points[axis], self._total_freq_points[axis],
                            constant_time_region_size, frequency_pts,
-                           line_width_pts,
+                           line_width,
                            cos_mod_values=cos_mod_j,
                            sin_mod_values=sin_mod_j,
                            amplitude=amplitude, phase=phase,
                            scale=scaling_factor))
+
+    # ---------------------------------------------------------------------------- #
+    #                              Peak Table Reading                              #
+    # ---------------------------------------------------------------------------- #
 
     def _read_file(self) -> list[Peak]:
         """
@@ -394,14 +404,16 @@ class Spectrum:
             new_peak = string_to_peak(
                     file_lines.pop(0), self.attributes, self.file, line_number,
                     (self._spectral_widths, self._coordinate_origins,
-                     self._obervation_freqs, self._total_time_points))
+                     self._observation_freqs, self._total_time_points))
             
             if new_peak:  
                 peaks.append(new_peak)  
 
         return peaks
     
-    # ------------------------------ Magic Methods ----------------------------- #
+    # ---------------------------------------------------------------------------- #
+    #                                 Magic Methods                                #
+    # ---------------------------------------------------------------------------- #
 
     def __repr__(self):
         if not self.remarks:
@@ -413,7 +425,168 @@ class Spectrum:
                f"remarks={remarks}, " \
                f"attributes={self.attributes})"
 
+# ---------------------------------------------------------------------------- #
+#                                 Optimization                                 #
+# ---------------------------------------------------------------------------- #
 
+def objective_function(params, input_spectrum : Spectrum, model_function : ModelFunction, target_interferogram : pype.DataFrame):
+    """
+    Function used for optimizing peak linewidths and heights of spectrum
+
+    Parameters
+    ----------
+    params : list
+        List of target parameters being tested (peak indices, peak linewidths, peak heights)
+    input_spectrum : Spectrum
+        Input spectrum to generate from 
+    model_function : ModelFunction
+        Spectral modeling method function (e.g. exponential, gaussian)
+    target_interferogram : pype.DataFrame
+        Corresponding nmrPype dataframe matching header content
+
+    Returns
+    -------
+    np.float32
+        Difference between simulated data and real data
+    """
+
+    # Unpack parameters
+    peak_x_lws = params[:len(input_spectrum.peaks)] # X-axis peak linewidths
+    peak_y_lws = params[len(input_spectrum.peaks):2*len(input_spectrum.peaks)] # Y-axis peak linewidths
+    peak_heights = params[2*len(input_spectrum.peaks):]
+
+    # Update peaks with the current parameters
+    for i, peak in enumerate(input_spectrum.peaks):
+        peak.linewidths.x.pts = peak_x_lws[i]
+        peak.linewidths.y.pts = peak_y_lws[i]
+        peak.intensity = peak_heights[i]
+
+    # Generate the simulated interferogram
+    simulated_interferogram = input_spectrum.spectral_simulation(model_function, target_interferogram, domain='ft1')
+
+    # Calculate the difference between the target and simulated interferograms
+    difference = np.sum((target_interferogram.array - simulated_interferogram) ** 2)
+
+    return difference
+    
+def interferogram_optimization(input_spectrum: Spectrum, model_function: ModelFunction, target_interferogram: pype.DataFrame) -> Spectrum:
+    """Optimize a Spectrum peak table to match the original interferogram data without window functions
+
+    Parameters
+    ----------
+    input_spectrum : Spectrum
+        Starting spectrum to optimize
+    model_function : ModelFunction
+        Spectral simulation decay model function (e.g exponential, gaussian)
+    target_interferogram : pype.DataFrame
+        Target interferogram to optimize peak table towards
+
+    Returns
+    -------
+    Spectrum
+        Optimized Spectrum with new peak table
+    """
+
+    # Initial guess for the parameters,
+    # Start with a (15, 5) hz linewidth
+    starting_x = Coordinate(0, 
+                               input_spectrum._spectral_widths[0], input_spectrum._coordinate_origins[0],
+                               input_spectrum._observation_freqs[0], input_spectrum._total_time_points[0])
+    # Set starting x value to 15 hz
+    starting_x.hz = 15.0
+
+    starting_y = Coordinate(0, 
+                            input_spectrum._spectral_widths[1], input_spectrum._coordinate_origins[1],
+                            input_spectrum._observation_freqs[1], input_spectrum._total_time_points[1])
+    # Set starting y value to 5 hz
+    starting_y.hz = 5.0
+
+    upper_bound = Coordinate(0, 
+                               input_spectrum._spectral_widths[0], input_spectrum._coordinate_origins[0],
+                               input_spectrum._observation_freqs[0], input_spectrum._total_time_points[0])
+    # Set upper bound value to 25 hz
+    upper_bound.hz = 25.0
+    
+    lower_bound = Coordinate(0, 
+                            input_spectrum._spectral_widths[1], input_spectrum._coordinate_origins[1],
+                            input_spectrum._observation_freqs[1], input_spectrum._total_time_points[1])
+    # Set lower bound value to 5 hz
+    lower_bound.hz = 5.0
+
+    initial_peak_lw_x = [starting_x.pts] * len(input_spectrum.peaks) # Initial peak x linewidths
+    initial_peak_lw_y = [starting_y.pts] * len(input_spectrum.peaks) # Initial peak y linewidths
+    initial_peak_heights = [peak.intensity for peak in input_spectrum.peaks] # Initial peak heights
+    initial_params = np.concatenate((initial_peak_lw_x, initial_peak_lw_y, initial_peak_heights))
+
+    # print("Original Parameters:")
+    # print(f"X Line-widths = {initial_peak_lw_x}")
+    # print(f"Y Line-widths = {initial_peak_lw_y}")
+    # print(f"Peak Heights = {initial_peak_heights}")
+
+    # Create bounds for the optimization
+    bounds = []
+    for peak in input_spectrum.peaks:
+        bounds.append((lower_bound.pts, upper_bound.pts))  # X-axis linewidth bounds
+    for peak in input_spectrum.peaks:
+        bounds.append((lower_bound.pts, upper_bound.pts))  # Y-axis linewidth bounds
+    for peak in input_spectrum.peaks:
+        bounds.append((0, None))  # Peak height bounds (non-negative)
+
+    # Perform the optimization
+    # result = minimize(objective_function, initial_params, 
+    #                   args=(input_spectrum, model_function, target_interferogram), 
+    #                   method='SLSQP')
+    result = basinhopping(objective_function, initial_params, niter=1000, stepsize=0.1, 
+                          minimizer_kwargs={"args": (input_spectrum, model_function, target_interferogram)},
+                          disp=False)
+
+    # Extract the optimized parameters
+    optimized_params = result.x
+    optimized_peak_lw_x = optimized_params[:len(input_spectrum.peaks)]
+    optimized_peak_lw_y = optimized_params[len(input_spectrum.peaks):2*len(input_spectrum.peaks)]
+    optimized_peak_heights = optimized_params[2*len(input_spectrum.peaks):]
+
+    # print("Optimized Parameters:")
+    # print(f"X Line-wdiths = {optimized_peak_lw_x}")
+    # print(f"Y Line-widths = {optimized_peak_lw_y}")
+    # print(f"Peak Heights = {optimized_peak_heights}")
+
+    # Create a copy of the input spectrum with the optimized parameters
+    optimized_spectrum = Spectrum(
+        input_spectrum.file,
+        input_spectrum._spectral_widths,
+        input_spectrum._coordinate_origins,
+        input_spectrum._observation_freqs,
+        input_spectrum._total_time_points,
+        input_spectrum._total_freq_points
+    )
+
+    # Update peaks with the optimized parameters
+    optimized_spectrum.peaks = []
+    for i, peak in enumerate(input_spectrum.peaks):
+        x_linewidth = Coordinate(float(optimized_peak_lw_x[i]),
+                             input_spectrum._spectral_widths[0], input_spectrum._coordinate_origins[0], 
+                             input_spectrum._observation_freqs[0], input_spectrum._total_time_points[0])
+
+        y_linewidth = Coordinate(float(optimized_peak_lw_y[i]),
+                             input_spectrum._spectral_widths[1], input_spectrum._coordinate_origins[1], 
+                             input_spectrum._observation_freqs[1], input_spectrum._total_time_points[1])
+
+        linewidths = Coordinate2D(input_spectrum.peaks[i].linewidths.index, 
+                                  x_linewidth, y_linewidth)
+        optimized_peak = Peak(
+            peak.position,
+            float(optimized_peak_heights[i]),
+            linewidths,
+            extra_params=peak.extra_params
+        )
+        optimized_spectrum.peaks.append(optimized_peak)
+
+    return optimized_spectrum
+
+# ---------------------------------------------------------------------------- #
+#                               Helper Functions                               #
+# ---------------------------------------------------------------------------- #
 def string_to_peak(peak_string : str,
                    attribute_dict : dict[str,str], 
                    file_name : Path, 
@@ -470,6 +643,16 @@ def string_to_peak(peak_string : str,
     # Collect x-coordinate and y-coordinate to represent peak position
     peakPosition = Coordinate2D(data["INDEX"], x_coord, y_coord)
 
+    x_linewidth = Coordinate(data["XW"],
+                             spectral_features[0][0], spectral_features[1][0],
+                             spectral_features[2][0], spectral_features[3][0])
+
+    y_linewidth = Coordinate(data["YW"],
+                             spectral_features[0][1], spectral_features[1][1],
+                             spectral_features[2][1], spectral_features[3][1])
+
+    linewidths = Coordinate2D(data["INDEX"], x_linewidth, y_linewidth)
+
     # Check for x and y cosine couplings if they exist
     x_cos_couplings = [coupl for coupl in data if re.fullmatch(r'X_COSJ\d+', coupl)]
     y_cos_couplings = [coupl for coupl in data if re.fullmatch(r'Y_COSJ\d+', coupl)]
@@ -500,7 +683,7 @@ def string_to_peak(peak_string : str,
                     'X_SINJ':x_sinj, 'Y_SINJ':y_sinj}
 
     # Return peak with position, intensity, and linewidth
-    return Peak(peakPosition, data["HEIGHT"], (data["XW"], data["YW"]), 
+    return Peak(peakPosition, data["HEIGHT"], linewidths, 
                 extra_params=extra_params)
 
 def format_to_datatype(data : str, format : str):

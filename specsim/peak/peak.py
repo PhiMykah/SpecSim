@@ -14,12 +14,12 @@ class Peak():
         Coordinates of peak with coordinate data
     intensity : float
         Intensity of the peak.
-    linewidth : tuple[float, float]
+    linewidth : Coordinate2D
         Linewidth of the peak dimensions in Pts
     extra_params : dict[str, float]
         Extra parameter values to define the peak feature
     """
-    def __init__(self, position : Coordinate2D, intensity : float, linewidths : tuple[float, float], extra_params = {}):
+    def __init__(self, position : Coordinate2D, intensity : float, linewidths : Coordinate2D, extra_params = {}):
         self.position = position
         self.intensity = intensity
         self.linewidths = linewidths

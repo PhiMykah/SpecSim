@@ -11,6 +11,9 @@ from specsim import sim_exponential_1D, sim_gaussian_1D
 # Spectrum Generation
 from specsim import Spectrum
 
+# Spectrum Optimization
+from specsim import interferogram_optimization
+
 # ---------------------------------------------------------------------------- #
 #                                     Main                                     #
 # ---------------------------------------------------------------------------- #
@@ -92,6 +95,45 @@ def main() -> int:
     simulation_model : str = 'gaus'
     output_file_path = Path(output_file).stem + f"_{simulation_model}" + f".{domain}"
     pype.write_to_file(output_df, output_file_path, True)
+
+    # -------------------------- Simulation Optimization ------------------------- #
+
+    if domain != 'ft1':
+        return
+    
+    # -------------------------------- Exponential ------------------------------- #
+
+    target_interferogram = pype.DataFrame("data/demo/zero/target_interferogram_exp.ft1")
+    target_interferogram_exp = target_interferogram
+    new_spectrum_exp = interferogram_optimization(test_spectrum, sim_exponential_1D, target_interferogram_exp)
+    new_spectrum_exp_data = new_spectrum_exp.spectral_simulation(sim_exponential_1D, target_interferogram, axis_count,
+                                                             peak_count, domain, constant_time_region_sizes,
+                                                             phases, offsets, scaling_factors)
+    
+    # Save gaussian decay data using existing dataframe as base
+    target_interferogram_exp.setArray(new_spectrum_exp_data)
+
+    simulation_model : str = 'ex'
+    output_file_path = "test_optimized" + f"_{simulation_model}" + f".{domain}"
+    pype.write_to_file(target_interferogram_exp, output_file_path, True)
+
+    # --------------------------------- Gaussian --------------------------------- #
+
+    target_interferogram = pype.DataFrame("data/demo/zero/target_interferogram_gaus.ft1")
+    target_interferogram_gaus = target_interferogram
+    new_spectrum_gaus = interferogram_optimization(test_spectrum, sim_gaussian_1D, target_interferogram_gaus)
+    new_spectrum_gaus_data = new_spectrum_gaus.spectral_simulation(sim_gaussian_1D, target_interferogram, axis_count,
+                                                             peak_count, domain, constant_time_region_sizes,
+                                                             phases, offsets, scaling_factors)
+    
+    # Save gaussian decay data using existing dataframe as base
+    target_interferogram_gaus.setArray(new_spectrum_gaus_data)
+
+    simulation_model : str = 'gaus'
+    output_file_path = "test_optimized" + f"_{simulation_model}" + f".{domain}"
+    pype.write_to_file(target_interferogram_gaus, output_file_path, True)
+
+    
 
 # ---------------------------------------------------------------------------- #
 #                                  Entry Point                                 #
