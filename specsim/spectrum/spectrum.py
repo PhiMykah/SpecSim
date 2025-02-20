@@ -486,66 +486,75 @@ def interferogram_optimization(input_spectrum: Spectrum, model_function: ModelFu
     Spectrum
         Optimized Spectrum with new peak table
     """
+    
+    optimization_args = (input_spectrum, model_function, target_interferogram)
+
+    # ------------------------------- Initial Guess ------------------------------ #
 
     # Initial guess for the parameters,
     # Start with a (15, 5) hz linewidth
     starting_x = Coordinate(0, 
                                input_spectrum._spectral_widths[0], input_spectrum._coordinate_origins[0],
                                input_spectrum._observation_freqs[0], input_spectrum._total_time_points[0])
-    # Set starting x value to 15 hz
     starting_x.hz = 15.0
 
     starting_y = Coordinate(0, 
                             input_spectrum._spectral_widths[1], input_spectrum._coordinate_origins[1],
                             input_spectrum._observation_freqs[1], input_spectrum._total_time_points[1])
-    # Set starting y value to 5 hz
     starting_y.hz = 5.0
 
+    # Initial parameter bounds
     upper_bound = Coordinate(0, 
                                input_spectrum._spectral_widths[0], input_spectrum._coordinate_origins[0],
                                input_spectrum._observation_freqs[0], input_spectrum._total_time_points[0])
-    # Set upper bound value to 25 hz
     upper_bound.hz = 25.0
     
     lower_bound = Coordinate(0, 
                             input_spectrum._spectral_widths[1], input_spectrum._coordinate_origins[1],
                             input_spectrum._observation_freqs[1], input_spectrum._total_time_points[1])
-    # Set lower bound value to 5 hz
     lower_bound.hz = 5.0
 
+    # Collect initial parameters
     initial_peak_lw_x = [starting_x.pts] * len(input_spectrum.peaks) # Initial peak x linewidths
     initial_peak_lw_y = [starting_y.pts] * len(input_spectrum.peaks) # Initial peak y linewidths
     initial_peak_heights = [peak.intensity for peak in input_spectrum.peaks] # Initial peak heights
     initial_params = np.concatenate((initial_peak_lw_x, initial_peak_lw_y, initial_peak_heights))
 
+    # //DEBUG
     # print("Original Parameters:")
     # print(f"X Line-widths = {initial_peak_lw_x}")
     # print(f"Y Line-widths = {initial_peak_lw_y}")
     # print(f"Peak Heights = {initial_peak_heights}")
 
-    # Create bounds for the optimization
-    bounds = []
-    for peak in input_spectrum.peaks:
-        bounds.append((lower_bound.pts, upper_bound.pts))  # X-axis linewidth bounds
-    for peak in input_spectrum.peaks:
-        bounds.append((lower_bound.pts, upper_bound.pts))  # Y-axis linewidth bounds
-    for peak in input_spectrum.peaks:
-        bounds.append((0, None))  # Peak height bounds (non-negative)
+    # ---------------------------------- Bounds ---------------------------------- #
 
-    # Perform the optimization
-    # result = minimize(objective_function, initial_params, 
-    #                   args=(input_spectrum, model_function, target_interferogram), 
-    #                   method='SLSQP')
-    result = basinhopping(objective_function, initial_params, niter=1000, stepsize=0.1, 
-                          minimizer_kwargs={"args": (input_spectrum, model_function, target_interferogram)},
-                          disp=False)
+    x_axis_bounds = [(lower_bound.pts, upper_bound.pts)] * len(input_spectrum.peaks) # X-axis linewidth bounds
+    y_axis_bounds = [(lower_bound.pts, upper_bound.pts)] * len(input_spectrum.peaks) # Y-axis linewidth bounds
+    intensity_bounds = [(0, 15)] * len(input_spectrum.peaks) # Peak height bounds (non-negative)
+
+    bounds = x_axis_bounds + y_axis_bounds + intensity_bounds
+    
+    # ----------------------------- Run Optimization ----------------------------- #
+
+    result = minimize(objective_function, initial_params, 
+                      args=optimization_args,
+                      method='SLSQP')
+    # result = basinhopping(objective_function, initial_params, niter=1000, stepsize=0.1, 
+    #                       minimizer_kwargs={"args": optimization_args},
+    #                       disp=False)
+    # x0, fval, grid, Jout = brute(objective_function, bounds, args=optimization_args, Ns=100, full_output=True, workers=-1, disp=True)
+    # ranges=[(lower_bound.pts, upper_bound.pts)] * (2 * len(input_spectrum.peaks)) + [(0, None)] * len(input_spectrum.peaks),
+    # args=(input_spectrum, model_function, target_interferogram)
+    # )
 
     # Extract the optimized parameters
     optimized_params = result.x
+    # optimized_params = x0
     optimized_peak_lw_x = optimized_params[:len(input_spectrum.peaks)]
     optimized_peak_lw_y = optimized_params[len(input_spectrum.peaks):2*len(input_spectrum.peaks)]
     optimized_peak_heights = optimized_params[2*len(input_spectrum.peaks):]
 
+    # //DEBUG
     # print("Optimized Parameters:")
     # print(f"X Line-wdiths = {optimized_peak_lw_x}")
     # print(f"Y Line-widths = {optimized_peak_lw_y}")
@@ -560,6 +569,8 @@ def interferogram_optimization(input_spectrum: Spectrum, model_function: ModelFu
         input_spectrum._total_time_points,
         input_spectrum._total_freq_points
     )
+
+    # ----------------------- New Spectrum ---------------------- #
 
     # Update peaks with the optimized parameters
     optimized_spectrum.peaks = []
@@ -581,7 +592,7 @@ def interferogram_optimization(input_spectrum: Spectrum, model_function: ModelFu
             extra_params=peak.extra_params
         )
         optimized_spectrum.peaks.append(optimized_peak)
-
+    
     return optimized_spectrum
 
 # ---------------------------------------------------------------------------- #

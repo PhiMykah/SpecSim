@@ -14,6 +14,9 @@ from specsim import Spectrum
 # Spectrum Optimization
 from specsim import interferogram_optimization
 
+# Model enum
+from specsim import Model
+
 # ---------------------------------------------------------------------------- #
 #                                     Main                                     #
 # ---------------------------------------------------------------------------- #
@@ -42,12 +45,21 @@ def main() -> int:
     constant_time_region_sizes = [0,0]                      # Size of x and y constant time regions
     peak_count = 0                                          # Number of peaks to simulate
     domain = "ft1"                                          # Domain of simulation data
+
+    # Set domain and output file based on whether one is included
     if output_file != None:
-        suffix = Path(output_file).suffix
+        suffix = Path(output_file).suffix.strip(".")
+        output_dir = Path(output_file).parent # Find parent directory of file
+        output_dir.mkdir(parents=True, exist_ok=True) # Make folders for file if they don't exist
+
         if suffix:
             domain = suffix                                 # Domain of simulation data    
     else:
         output_file = f"test_sim.{domain}"
+
+    # Select method based on input 
+    template_file = Path(command_arguments.ft1).stem.lower()
+    simulation_model = Model.from_filename(template_file)
 
     # ------------------------------ Spectrum Class ------------------------------ #
 
@@ -60,15 +72,13 @@ def main() -> int:
 
     # ------------------------------ Run Simulation ------------------------------ #
 
-    exp_simulated_data = test_spectrum.spectral_simulation(
-        sim_exponential_1D, data_frame, axis_count,
-        peak_count, domain, constant_time_region_sizes,
-        phases, offsets, scaling_factors)
-
-    gaus_simulated_data = test_spectrum.spectral_simulation(
-        sim_gaussian_1D, data_frame, axis_count,
-        peak_count, domain, constant_time_region_sizes,
-        phases, offsets, scaling_factors)
+    model_function : callable = Model.function(simulation_model)
+    
+    simulated_data = test_spectrum.spectral_simulation(
+            model_function, data_frame, axis_count,
+            peak_count, domain, constant_time_region_sizes,
+            phases, offsets, scaling_factors
+        )
 
     # ------------------------------ Save Simulation ----------------------------- #
 
@@ -81,19 +91,11 @@ def main() -> int:
     else:
         raise TypeError("Invalid nmrpipe data output format!")
 
-    # Save exponential decay data using existing dataframe as base
-    output_df.setArray(exp_simulated_data)
+    # Save simulated data using existing dataframe as base
+    output_df.setArray(simulated_data)
 
-    # Format output file path for exponential decay
-    simulation_model : str = 'ex'
-    output_file_path = Path(output_file).stem + f"_{simulation_model}" + f".{domain}"
-    pype.write_to_file(output_df, output_file_path, True)
-
-    # Save gaussian decay data using existing dataframe as base
-    output_df.setArray(gaus_simulated_data)
-
-    simulation_model : str = 'gaus'
-    output_file_path = Path(output_file).stem + f"_{simulation_model}" + f".{domain}"
+    # Format output file path
+    output_file_path = str(Path(output_file).with_suffix('')) + f"_{str(simulation_model)}" + f".{domain}"
     pype.write_to_file(output_df, output_file_path, True)
 
     # -------------------------- Simulation Optimization ------------------------- #
@@ -103,36 +105,18 @@ def main() -> int:
     
     # -------------------------------- Exponential ------------------------------- #
 
-    target_interferogram = pype.DataFrame("data/demo/zero/target_interferogram_exp.ft1")
-    target_interferogram_exp = target_interferogram
-    new_spectrum_exp = interferogram_optimization(test_spectrum, sim_exponential_1D, target_interferogram_exp)
-    new_spectrum_exp_data = new_spectrum_exp.spectral_simulation(sim_exponential_1D, target_interferogram, axis_count,
+    no_window = pype.DataFrame(f"demo/zero/no_window/zero_freq_{str(simulation_model)}.ft1")
+    optimized_output = pype.DataFrame(f"demo/zero/no_window/zero_freq_{str(simulation_model)}.ft1")
+    new_spectrum = interferogram_optimization(test_spectrum,model_function, no_window)
+    new_spectrum_data = new_spectrum.spectral_simulation(model_function, optimized_output, axis_count,
                                                              peak_count, domain, constant_time_region_sizes,
                                                              phases, offsets, scaling_factors)
     
     # Save gaussian decay data using existing dataframe as base
-    target_interferogram_exp.setArray(new_spectrum_exp_data)
+    optimized_output.setArray(new_spectrum_data)
 
-    simulation_model : str = 'ex'
-    output_file_path = "test_optimized" + f"_{simulation_model}" + f".{domain}"
-    pype.write_to_file(target_interferogram_exp, output_file_path, True)
-
-    # --------------------------------- Gaussian --------------------------------- #
-
-    target_interferogram = pype.DataFrame("data/demo/zero/target_interferogram_gaus.ft1")
-    target_interferogram_gaus = target_interferogram
-    new_spectrum_gaus = interferogram_optimization(test_spectrum, sim_gaussian_1D, target_interferogram_gaus)
-    new_spectrum_gaus_data = new_spectrum_gaus.spectral_simulation(sim_gaussian_1D, target_interferogram, axis_count,
-                                                             peak_count, domain, constant_time_region_sizes,
-                                                             phases, offsets, scaling_factors)
-    
-    # Save gaussian decay data using existing dataframe as base
-    target_interferogram_gaus.setArray(new_spectrum_gaus_data)
-
-    simulation_model : str = 'gaus'
-    output_file_path = "test_optimized" + f"_{simulation_model}" + f".{domain}"
-    pype.write_to_file(target_interferogram_gaus, output_file_path, True)
-
+    output_file_path = str(Path(output_file).with_suffix('')) + "_optimized" + f"_{str(simulation_model)}" + f".{domain}"
+    pype.write_to_file(optimized_output, output_file_path, True)
     
 
 # ---------------------------------------------------------------------------- #
