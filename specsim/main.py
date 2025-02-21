@@ -46,6 +46,11 @@ def main() -> int:
     peak_count = 0                                          # Number of peaks to simulate
     domain = "ft1"                                          # Domain of simulation data
 
+    # -------------------------- Optimization Parameters ------------------------- #
+
+    optimization_method = command_arguments.mode
+    trial_count = command_arguments.trials
+
     # Set domain and output file based on whether one is included
     if output_file != None:
         suffix = Path(output_file).suffix.strip(".")
@@ -107,7 +112,7 @@ def main() -> int:
 
     no_window = pype.DataFrame(f"demo/zero/no_window/zero_freq_{str(simulation_model)}.ft1")
     optimized_output = pype.DataFrame(f"demo/zero/no_window/zero_freq_{str(simulation_model)}.ft1")
-    new_spectrum = interferogram_optimization(test_spectrum,model_function, no_window)
+    new_spectrum = interferogram_optimization(test_spectrum,model_function, no_window, optimization_method, trial_count)
     new_spectrum_data = new_spectrum.spectral_simulation(model_function, optimized_output, axis_count,
                                                              peak_count, domain, constant_time_region_sizes,
                                                              phases, offsets, scaling_factors)
