@@ -170,6 +170,7 @@ class SpecSimArgs:
         self.rx1: int = args.rx1
         self.rxn: int = args.rxn
         self.mode: str = args.mode
+        self.mode: str = args.mode
         self.trials: int = args.trials
         self.maxFail: int = args.maxFail
         self.iseed: int = args.iseed
