@@ -15,6 +15,7 @@ def parse_command_line(argument_list : str) -> argparse.Namespace:
     parser.add_argument('-scale', type=float, default=1.0, help="Amplitude Scaling Factor")
     parser.add_argument('-rx1', type=int, default=0, help='First Point Location for Calculating Residual.')
     parser.add_argument('-rxn', type=int, default=0, help='Last Point Location for Calculating Residual.')
+    parser.add_argument('-mode', type=str, choices=['lsq', 'basin', 'minimize', 'brute'], default='brute', help='Optimization mode (lsq, basin, minimize, brute).')
     parser.add_argument('-trials', type=int, default=0, help='Number of Optimization Trials.')
     parser.add_argument('-maxFail', type=int, default=0, help='Max Optimization Fails Before Quitting.')
     parser.add_argument('-iseed', type=int, default=randint(1, sys.maxsize), help='Random Number Seed.')
@@ -168,6 +169,7 @@ class SpecSimArgs:
         self.scale: float = args.scale
         self.rx1: int = args.rx1
         self.rxn: int = args.rxn
+        self.mode: str = args.mode
         self.trials: int = args.trials
         self.maxFail: int = args.maxFail
         self.iseed: int = args.iseed
