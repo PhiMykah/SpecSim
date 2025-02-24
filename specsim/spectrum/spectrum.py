@@ -86,6 +86,7 @@ class Spectrum:
 
     def spectral_simulation(self, model_function : ModelFunction, 
                             spectrum_data_frame : pype.DataFrame,
+                            spectrum_fid : pype.DataFrame,
                             axis_count : int = 2,
                             peaks_simulated : list[int] | int = 0, 
                             domain : str = 'ft1',
@@ -102,6 +103,8 @@ class Spectrum:
             The model function used for spectral simulation.
         spectrum_data_frame : nmrPype.DataFrame
             nmrpype format data to obtain header information from
+        spectrum_fid : nmrPype.DataFrame
+            nmrpype format data to perform transforms on
         axis_count : int, optional
             Number of axes to simulate, by default 2
         peaks_simulated : list[int] | int, optional
@@ -144,23 +147,41 @@ class Spectrum:
         if domain == 'ft2' and axis_count >= 2:
             process_iterations = 2
 
+        fid = spectrum_fid
         for i in range(process_iterations):
+            iteration_df = pype.DataFrame(file=fid.file, header=fid.header, array=fid.array)
+            iteration_df.array = simulations[i]
+            dim = i + 1
+            
+            #  Add first point scaling and window function if necessary
+            off_param = spectrum_data_frame.getParam("NDAPODQ1", dim)
+            end_param = spectrum_data_frame.getParam("NDAPODQ1", dim)
+            pow_param = spectrum_data_frame.getParam("NDAPODQ3", dim)
+            elb_param = spectrum_data_frame.getParam("NDLB", dim)
+            glb_param = spectrum_data_frame.getParam("NDGB", dim)
+            goff_param = spectrum_data_frame.getParam("NDGOFF", dim)
+            first_point_scale = 1 + spectrum_data_frame.getParam("NDC1", dim)
+
+            iteration_df.runFunc("SP", {"sp_off":off_param, "sp_end":end_param, "sp_pow":pow_param, "sp_elb":elb_param,
+                                        "sp_glb":glb_param, "sp_goff":goff_param, "sp_c":first_point_scale})
             # Zero fill if necessary
-            new_size = spectrum_data_frame.getParam("NDFTSIZE", i + 1)
-            if new_size > simulations[i].size:
-                simulations[i] = zero_fill(simulations[i], new_size)
+            new_size = spectrum_data_frame.getParam("NDFTSIZE", dim)
+            iteration_df.runFunc("ZF", {"zf_size":int(new_size)})
 
             # Convert to frequency domain
-            simulations[i] = fourier_transform(simulations[i])
+            iteration_df.runFunc("FT")
 
             # Extract designated region if necessary
-            first_point = int(spectrum_data_frame.getParam("NDX1", i + 1))
-            last_point = int(spectrum_data_frame.getParam("NDXN", i + 1))
+            first_point = int(spectrum_data_frame.getParam("NDX1", dim))
+            last_point = int(spectrum_data_frame.getParam("NDXN", dim))
             if first_point and last_point:
-                simulations[i] = extract_region(simulations[i], first_point, last_point)
+                iteration_df.array = extract_region(iteration_df.array, first_point, last_point)
             
             # Delete imaginary values
-            simulations[i] = simulations[i].real
+            # simulations[i] = simulations[i].real
+            iteration_df.runFunc("DI")
+
+            simulations[i] = iteration_df.array
 
         # Interleave real and imaginary values in indirect dimensions if complex
         if len(simulations) > 1:
@@ -429,7 +450,7 @@ class Spectrum:
 #                                 Optimization                                 #
 # ---------------------------------------------------------------------------- #
 
-def objective_function_lsq(params, input_spectrum : Spectrum, model_function : ModelFunction, target_interferogram : pype.DataFrame) -> np.ndarray:
+def objective_function_lsq(params, input_spectrum : Spectrum, model_function : ModelFunction, input_fid : pype.DataFrame, target_interferogram : pype.DataFrame) -> np.ndarray:
     """
     Function used for optimizing peak linewidths and heights of spectrum and returning the difference
 
@@ -441,6 +462,8 @@ def objective_function_lsq(params, input_spectrum : Spectrum, model_function : M
         Input spectrum to generate from 
     model_function : ModelFunction
         Spectral modeling method function (e.g. exponential, gaussian)
+    input_fid : nmrPype.DataFrame
+        Corresponding fid dataframe to perform functions
     target_interferogram : nmrPype.DataFrame
         Corresponding nmrPype dataframe matching header content
 
@@ -462,12 +485,12 @@ def objective_function_lsq(params, input_spectrum : Spectrum, model_function : M
         peak.intensity = peak_heights[i]
 
     # Generate the simulated interferogram
-    simulated_interferogram = input_spectrum.spectral_simulation(model_function, target_interferogram, domain='ft1')
+    simulated_interferogram = input_spectrum.spectral_simulation(model_function, target_interferogram, input_fid, domain='ft1')
 
     # Calculate the difference between the target and simulated interferograms
     return (target_interferogram.array - simulated_interferogram).flatten()
 
-def objective_function(params, input_spectrum : Spectrum, model_function : ModelFunction, target_interferogram : pype.DataFrame) -> np.float32:
+def objective_function(params, input_spectrum : Spectrum, model_function : ModelFunction, input_fid : pype.DataFrame, target_interferogram : pype.DataFrame) -> np.float32:
     """
     Function used for optimizing peak linewidths and heights of spectrum
 
@@ -479,6 +502,8 @@ def objective_function(params, input_spectrum : Spectrum, model_function : Model
         Input spectrum to generate from 
     model_function : ModelFunction
         Spectral modeling method function (e.g. exponential, gaussian)
+    input_fid : nmrPype.DataFrame
+        Corresponding fid dataframe to perform functions
     target_interferogram : nmrPype.DataFrame
         Corresponding nmrPype dataframe matching header content
 
@@ -500,14 +525,14 @@ def objective_function(params, input_spectrum : Spectrum, model_function : Model
         peak.intensity = peak_heights[i]
 
     # Generate the simulated interferogram
-    simulated_interferogram = input_spectrum.spectral_simulation(model_function, target_interferogram, domain='ft1')
+    simulated_interferogram = input_spectrum.spectral_simulation(model_function, target_interferogram, input_fid, domain='ft1')
 
     # Calculate the difference between the target and simulated interferograms
     difference = np.sum((target_interferogram.array - simulated_interferogram) ** 2)
 
     return difference
     
-def interferogram_optimization(input_spectrum: Spectrum, model_function: ModelFunction, 
+def interferogram_optimization(input_spectrum: Spectrum, model_function: ModelFunction, input_fid : pype.DataFrame,
                                target_interferogram: pype.DataFrame, method : str = 'lsq', trial_count : int = 100) -> Spectrum:
     """
     Optimize a Spectrum peak table to match the original interferogram data without window functions
@@ -535,7 +560,7 @@ def interferogram_optimization(input_spectrum: Spectrum, model_function: ModelFu
     if method == '' or method not in OPT_METHODS:
         method = 'brute'
 
-    optimization_args = (input_spectrum, model_function, target_interferogram)
+    optimization_args = (input_spectrum, model_function, input_fid, target_interferogram)
 
     # ------------------------------- Initial Guess ------------------------------ #
 
