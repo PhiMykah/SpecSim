@@ -12,6 +12,8 @@ from typing import Callable, Optional, Annotated
 type File = str | Path
 type ModelFunction = Callable[[int, int, int, float, float, Optional[np.ndarray], Optional[np.ndarray], float, tuple[int, int], float], np.ndarray]
 
+from matplotlib import pyplot as plt
+
 # Axes
 X = 0 # First index for x-axis
 Y = 1 # Second index for y-axis
@@ -152,10 +154,10 @@ class Spectrum:
             iteration_df = pype.DataFrame(file=fid.file, header=fid.header, array=fid.array)
             iteration_df.array = simulations[i]
             dim = i + 1
-            
+
             #  Add first point scaling and window function if necessary
             off_param = spectrum_data_frame.getParam("NDAPODQ1", dim)
-            end_param = spectrum_data_frame.getParam("NDAPODQ1", dim)
+            end_param = spectrum_data_frame.getParam("NDAPODQ2", dim)
             pow_param = spectrum_data_frame.getParam("NDAPODQ3", dim)
             elb_param = spectrum_data_frame.getParam("NDLB", dim)
             glb_param = spectrum_data_frame.getParam("NDGB", dim)
@@ -165,21 +167,25 @@ class Spectrum:
             iteration_df.runFunc("SP", {"sp_off":off_param, "sp_end":end_param, "sp_pow":pow_param, "sp_elb":elb_param,
                                         "sp_glb":glb_param, "sp_goff":goff_param, "sp_c":first_point_scale})
             # Zero fill if necessary
-            new_size = spectrum_data_frame.getParam("NDFTSIZE", dim)
-            iteration_df.runFunc("ZF", {"zf_size":int(new_size)})
+            iteration_df.runFunc("ZF", {"zf_count":1, 'zf_auto':True})
 
             # Convert to frequency domain
             iteration_df.runFunc("FT")
+            
+            # Perform phase correction
+            iteration_df.runFunc("PS", {"ps_p0":phase_values[i][0], "ps_p1":phase_values[i][1]})
 
+            # Delete imaginary values
+            # simulations[i] = simulations[i].real
+            iteration_df.runFunc("DI")
+            
             # Extract designated region if necessary
             first_point = int(spectrum_data_frame.getParam("NDX1", dim))
             last_point = int(spectrum_data_frame.getParam("NDXN", dim))
             if first_point and last_point:
                 iteration_df.array = extract_region(iteration_df.array, first_point, last_point)
             
-            # Delete imaginary values
-            # simulations[i] = simulations[i].real
-            iteration_df.runFunc("DI")
+
 
             simulations[i] = iteration_df.array
 
@@ -487,6 +493,31 @@ def objective_function_lsq(params, input_spectrum : Spectrum, model_function : M
     # Generate the simulated interferogram
     simulated_interferogram = input_spectrum.spectral_simulation(model_function, target_interferogram, input_fid, domain='ft1')
 
+    # ----------------------------------- DEBUG ---------------------------------- #
+
+    # simulated_fid = input_spectrum.spectral_simulation(model_function, input_fid, input_fid, domain='fid')
+    # fig, axs = plt.subplots(2, 3, figsize=(18, 12))
+    # axs[0, 0].plot(simulated_fid[0].real, label='synthetic')
+    # axs[0, 0].set_title('Synthetic FID')
+    # axs[0, 1].plot(input_fid.array[0].real, label='real')
+    # axs[0, 1].set_title('Real FID')
+    # axs[0, 2].plot(simulated_fid[0].real, label='synthetic')
+    # axs[0, 2].plot(input_fid.array[0].real, label='real')
+    # axs[0, 2].set_title('Synthetic vs Real FID')
+
+    # axs[1, 0].plot(simulated_interferogram[0].real, label='synthetic')
+    # axs[1, 0].set_title('Synthetic Interferogram')
+    # axs[1, 1].plot(target_interferogram.array[0].real, label='real')
+    # axs[1, 1].set_title('Real Interferogram')
+    # axs[1, 2].plot(simulated_interferogram[0].real, label='synthetic')
+    # axs[1, 2].plot(target_interferogram.array[0].real, label='real')
+    # axs[1, 2].set_title('Synthetic vs Real Interferogram')
+    
+    # for ax in axs.flat:
+    #     ax.legend()
+    # plt.savefig("test_difference.png")
+    # plt.close()
+
     # Calculate the difference between the target and simulated interferograms
     return (target_interferogram.array - simulated_interferogram).flatten()
 
@@ -526,6 +557,31 @@ def objective_function(params, input_spectrum : Spectrum, model_function : Model
 
     # Generate the simulated interferogram
     simulated_interferogram = input_spectrum.spectral_simulation(model_function, target_interferogram, input_fid, domain='ft1')
+
+    # ----------------------------------- DEBUG ---------------------------------- #
+
+    # simulated_fid = input_spectrum.spectral_simulation(model_function, input_fid, input_fid, domain='fid')
+    # fig, axs = plt.subplots(2, 3, figsize=(18, 12))
+    # axs[0, 0].plot(simulated_fid[0].real, label='synthetic')
+    # axs[0, 0].set_title('Synthetic FID')
+    # axs[0, 1].plot(input_fid.array[0].real, label='real')
+    # axs[0, 1].set_title('Real FID')
+    # axs[0, 2].plot(simulated_fid[0].real, label='synthetic')
+    # axs[0, 2].plot(input_fid.array[0].real, label='real')
+    # axs[0, 2].set_title('Synthetic vs Real FID')
+
+    # axs[1, 0].plot(simulated_interferogram[0].real, label='synthetic')
+    # axs[1, 0].set_title('Synthetic Interferogram')
+    # axs[1, 1].plot(target_interferogram.array[0].real, label='real')
+    # axs[1, 1].set_title('Real Interferogram')
+    # axs[1, 2].plot(simulated_interferogram[0].real, label='synthetic')
+    # axs[1, 2].plot(target_interferogram.array[0].real, label='real')
+    # axs[1, 2].set_title('Synthetic vs Real Interferogram')
+    
+    # for ax in axs.flat:
+    #     ax.legend()
+    # plt.savefig("test_difference.png")
+    # plt.close()
 
     # Calculate the difference between the target and simulated interferograms
     difference = np.sum((target_interferogram.array - simulated_interferogram) ** 2)

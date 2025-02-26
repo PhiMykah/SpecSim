@@ -110,27 +110,16 @@ def main() -> int:
     
     # -------------------------------- Exponential ------------------------------- #
 
-    no_window = pype.DataFrame(f"demo/zero/no_window/zero_freq_{str(simulation_model)}.ft1")
+    target_data = pype.DataFrame(f"demo/zero/no_window/zero_freq_{str(simulation_model)}.ft1")
+    target_data_fid = pype.DataFrame(f"demo/zero/no_window/zero_freq_{str(simulation_model)}.fid")
     optimized_output = pype.DataFrame(f"demo/zero/no_window/zero_freq_{str(simulation_model)}.ft1")
-    new_spectrum = interferogram_optimization(test_spectrum, model_function, data_fid, no_window, optimization_method, trial_count)
+    new_spectrum = interferogram_optimization(test_spectrum, model_function, target_data_fid, target_data, optimization_method, trial_count)
     new_spectrum_data = new_spectrum.spectral_simulation(model_function, optimized_output, data_fid, axis_count,
                                                              peak_count, domain, constant_time_region_sizes,
                                                              phases, offsets, scaling_factors)
     
     # Save gaussian decay data using existing dataframe as base
     optimized_output.setArray(new_spectrum_data)
-
-    # difference = new_spectrum_data - no_window.array
-
-    # from matplotlib import pyplot as plt
-    # import numpy as np
-    # fid = np.load("fid.npy")
-    # plt.figure()
-    # # plt.plot(new_spectrum_data[0], label='synthetic')
-    # # plt.plot(no_window.array[0], label='real')
-    # plt.plot(fid)
-    # plt.legend()
-    # plt.savefig("test_difference.png")
 
     output_file_path = str(Path(output_file).with_suffix('')) + "_optimized" + f"_{str(simulation_model)}" + f".{domain}"
     pype.write_to_file(optimized_output, output_file_path, True)
