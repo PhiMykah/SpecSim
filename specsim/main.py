@@ -107,12 +107,10 @@ def main() -> int:
 
     if domain != 'ft1':
         return
-    
-    # -------------------------------- Exponential ------------------------------- #
 
-    target_data = pype.DataFrame(f"demo/zero/no_window/zero_freq_{str(simulation_model)}.ft1")
-    target_data_fid = pype.DataFrame(f"demo/zero/no_window/zero_freq_{str(simulation_model)}.fid")
-    optimized_output = pype.DataFrame(f"demo/zero/no_window/zero_freq_{str(simulation_model)}.ft1")
+    target_data = pype.DataFrame(command_arguments.ft1)
+    target_data_fid = pype.DataFrame(command_arguments.fid)
+    optimized_output = pype.DataFrame(command_arguments.ft1)
     new_spectrum = interferogram_optimization(test_spectrum, model_function, target_data_fid, target_data, optimization_method, trial_count)
     new_spectrum_data = new_spectrum.spectral_simulation(model_function, optimized_output, data_fid, axis_count,
                                                              peak_count, domain, constant_time_region_sizes,
