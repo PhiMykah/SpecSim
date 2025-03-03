@@ -2,6 +2,7 @@ from .exponential import sim_exponential_1D
 from .gaussian import sim_gaussian_1D
 
 from enum import Enum
+import sys
 class Model(Enum):
     """
     Enum Class for Handling Decay Model Functions
@@ -30,13 +31,16 @@ class Model(Enum):
         elif label in ("gaus", "gauss", "gaussian"):
             return cls.GAUSSIAN
         else:
-            raise ValueError(f"{label} is not a valid Model")
+            print(f"Warning: {label} is not a valid model, using exponential", file=sys.stderr)
+            return cls.EXPONENTIAL
     
     @classmethod
     def from_filename(cls, filename : str):
         if filename.endswith("exp") or filename.endswith("ex"):
             return cls.EXPONENTIAL
-        elif filename.endswith("gaus") or filename.endswith("gauss"):
+        elif filename.endswith("gaus"
+                               ) or filename.endswith("gauss"):
             return cls.GAUSSIAN
         else:
-            raise ValueError(f"{filename} Does not contain a valid Model")
+            print(f"Warning: Filename \'{filename}\' does not contain a valid model, using exponential", file=sys.stderr)
+            return cls.EXPONENTIAL

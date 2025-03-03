@@ -38,13 +38,14 @@ def main() -> int:
     observation_frequencies = get_dimension_info(data_frame, "NDOBS")
     total_time_points = get_total_size(data_frame, 'NDTDSIZE')
     total_freq_points = get_total_size(data_frame, 'NDFTSIZE')
-    phase = (command_arguments.p0, command_arguments.p1)    # p0 and p1 phases of spectrum
-    phases = [phase, phase]                                 # Phase values for x-axis and y-axis
-    scaling_factors = [command_arguments.scale, 1.0]          # Time domain x and y scaling values
-    offsets = [command_arguments.xOff, 0]                   # Frequency x and y offset for simulation                             
-    constant_time_region_sizes = [0,0]                      # Size of x and y constant time regions
-    peak_count = 0                                          # Number of peaks to simulate
-    domain = "ft1"                                          # Domain of simulation data
+    xPhase = (command_arguments.xP0, command_arguments.xP1)     # p0 and p1 phases of spectrum for x-axis
+    yPhase = (command_arguments.yP0, command_arguments.yP1)     # p0 and p1 phases of spectrum for y-axis
+    phases = [xPhase, yPhase]                                   # Phase values for x-axis and y-axis
+    scaling_factors = [command_arguments.scale, 1.0]            # Time domain x and y scaling values
+    offsets = [command_arguments.xOff, 0]                       # Frequency x and y offset for simulation                             
+    constant_time_region_sizes = [0,0]                          # Size of x and y constant time regions
+    peak_count = 0                                              # Number of peaks to simulate
+    domain = "ft1"                                              # Domain of simulation data
 
     # -------------------------- Optimization Parameters ------------------------- #
 
@@ -111,7 +112,8 @@ def main() -> int:
     target_data = pype.DataFrame(command_arguments.ft1)
     target_data_fid = pype.DataFrame(command_arguments.fid)
     optimized_output = pype.DataFrame(command_arguments.ft1)
-    new_spectrum = interferogram_optimization(test_spectrum, model_function, target_data_fid, target_data, optimization_method, trial_count)
+    sim_params = (constant_time_region_sizes, phases, offsets, scaling_factors)
+    new_spectrum = interferogram_optimization(test_spectrum, model_function, target_data_fid, target_data, optimization_method, trial_count, sim_params)
     new_spectrum_data = new_spectrum.spectral_simulation(model_function, optimized_output, data_fid, axis_count,
                                                              peak_count, domain, constant_time_region_sizes,
                                                              phases, offsets, scaling_factors)

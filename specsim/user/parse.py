@@ -5,18 +5,18 @@ import nmrPype as pype
 
 def parse_command_line(argument_list : str) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description='specsim: simulate NMR spectral simulator')
-    parser.add_argument('-tab', type=str, default='master.tab', help='Peak Table Input.')
-    parser.add_argument('-fid', type=str, default='test.fid', help='NMRPipe-format Time-Domain Input.')
-    parser.add_argument('-ft1', type=str, default='test.ft1', help='Corresponding NMRPipe-format Interferogram Input.')
-    parser.add_argument('-ft2', type=str, default='test.ft2', help='Corresponding NMRPipe-format Freq-Domain Input.')
+    parser.add_argument('-tab', type=str, default='master.tab', help='Peak Table Input.') #
+    parser.add_argument('-fid', type=str, default='test.fid', help='NMRPipe-format Time-Domain Input.') #
+    parser.add_argument('-ft1', type=str, default='test.ft1', help='Corresponding NMRPipe-format Interferogram Input.') #
+    parser.add_argument('-ft2', type=str, default='test.ft2', help='Corresponding NMRPipe-format Freq-Domain Input.') #
     parser.add_argument('-apod', type=str, default=None, help='Optional NMRPipe-format Apodization Profile.')
-    parser.add_argument('-out', type=str, default=None, help='NMRPipe-format Time-Domain Output, or Keyword None.')
+    parser.add_argument('-out', type=str, default=None, help='NMRPipe-format Time-Domain Output, or Keyword None.') #
     parser.add_argument('-res', type=str, default=None, help='NMRPipe-format Time-Domain Residual, or Keyword None.')
-    parser.add_argument('-scale', type=float, default=1.0, help="Amplitude Scaling Factor")
+    parser.add_argument('-scale', type=float, default=1.0, help="Amplitude Scaling Factor") #
     parser.add_argument('-rx1', type=int, default=0, help='First Point Location for Calculating Residual.')
     parser.add_argument('-rxn', type=int, default=0, help='Last Point Location for Calculating Residual.')
-    parser.add_argument('-mode', type=str, choices=['lsq', 'basin', 'minimize', 'brute'], default='lsq', help='Optimization mode (lsq, basin, minimize, brute).')
-    parser.add_argument('-trials', type=int, default=0, help='Number of Optimization Trials.')
+    parser.add_argument('-mode', type=str, choices=['lsq', 'basin', 'minimize', 'brute'], default='lsq', help='Optimization mode (lsq, basin, minimize, brute).') #
+    parser.add_argument('-trials', type=int, default=0, help='Number of Optimization Trials.') #
     parser.add_argument('-maxFail', type=int, default=0, help='Max Optimization Fails Before Quitting.')
     parser.add_argument('-iseed', type=int, default=randint(1, sys.maxsize), help='Random Number Seed.')
     parser.add_argument('-verb', action='store_true', help='Verbose Mode ON (Default OFF).')
@@ -27,12 +27,14 @@ def parse_command_line(argument_list : str) -> argparse.Namespace:
     parser.add_argument('-eAmp', type=str, default='Auto', help='Exponential Amplitudes, or Keyword Auto.')
     parser.add_argument('-gDecay', type=str, default=None, help='Gaussian Decays (Pts Hz ppm %%).')
     parser.add_argument('-gAmp', type=str, default='Auto', help='Gaussian Amplitudes, or Keyword Auto.')
-    parser.add_argument('-xOff', type=float, default=0.0, help="Optional Frequency offset value in pts.")
+    parser.add_argument('-xOff', type=float, default=0.0, help="Optional Frequency offset value in pts.") #
     parser.add_argument('-j1', type=str, default=None, help='Coupling 1 (Cosine Modulation, Pts Hz ppm %%).')
     parser.add_argument('-j2', type=str, default=None, help='Coupling 2 (Cosine Modulation, Pts Hz ppm %%).')
     parser.add_argument('-j3', type=str, default=None, help='Coupling 3 (Cosine Modulation, Pts Hz ppm %%).')
-    parser.add_argument('-p0', type=float, default=0.0, help='Zero Order Phase of All Signals.')
-    parser.add_argument('-p1', type=float, default=0.0, help='First Order Phase of All Signals.')
+    parser.add_argument('-xP0', type=float, default=0.0, help='Zero Order Phase of All Signals for x-axis.') #
+    parser.add_argument('-xP1', type=float, default=0.0, help='First Order Phase of All Signals for x-axis.') #
+    parser.add_argument('-yP0', type=float, default=0.0, help='Zero Order Phase of All Signals for y-axis.') #
+    parser.add_argument('-yP1', type=float, default=0.0, help='First Order Phase of All Signals for y-axis.') #
     parser.add_argument('-ePhase', type=float, default=0.0, help='Additional Phase for Each Exponential Signal.')
     parser.add_argument('-gPhase', type=float, default=0.0, help='Additional Phase for Each Gaussian Signal.')
     parser.add_argument('-ts', action='store_true', help='Scale Time-Domain Signal by Decay Integral.')
@@ -137,10 +139,14 @@ class SpecSimArgs:
         Second J-coupling constant.
     j3 : float
         Third J-coupling constant.
-    p0 : float
-        Zero-order phase correction.
-    p1 : float
-        First-order phase correction.
+    xP0 : float
+        Zero-order phase correction for x-axis.
+    xP1 : float
+        First-order phase correction for x-axis.
+    yP0 : float
+        Zero-order phase correction for y-axis.
+    yP1 : float
+        First-order phase correction for y-axis.
     ePhase : float
         Exponential phase correction.
     gPhase : float
@@ -186,8 +192,10 @@ class SpecSimArgs:
         self.j1: str = args.j1
         self.j2: str = args.j2
         self.j3: str = args.j3
-        self.p0: float = args.p0
-        self.p1: float = args.p1
+        self.xP0: float = args.xP0
+        self.xP1: float = args.xP1
+        self.yP0: float = args.yP0
+        self.yP1: float = args.yP1
         self.ePhase: float = args.ePhase
         self.gPhase: float = args.gPhase
         self.ts: bool = args.ts
@@ -203,7 +211,7 @@ class SpecSimArgs:
                 f"maxFail={self.maxFail}, iseed={self.iseed}, verb={self.verb}, noverb={self.noverb}, "
                 f"report={self.report}, freq={self.freq}, eDecay={self.eDecay}, eAmp={self.eAmp}, "
                 f"gDecay={self.gDecay}, gAmp={self.gAmp}, xOff={self.xOff}, j1={self.j1}, j2={self.j2}, "
-                f"j3={self.j3}, p0={self.p0}, p1={self.p1}, ePhase={self.ePhase}, gPhase={self.gPhase}, "
+                f"j3={self.j3}, xP0={self.xP0}, xP1={self.xP1}, yP0={self.yP0}, yP1={self.yP1}, ePhase={self.ePhase}, gPhase={self.gPhase}, "
                 f"ts={self.ts}, nots={self.nots}, notdd={self.notdd}, tdd={self.tdd}, tdj={self.tdj}, "
                 f"notdj={self.notdj})")
         

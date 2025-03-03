@@ -61,6 +61,45 @@ def extract_region(array : np.ndarray, first_point : int, last_point : int) -> n
     """
     if first_point == 0 and last_point == 0:
         return array
-    if first_point != 0:
+    if first_point == 1:
         first_point = first_point - 1 
     return array[first_point:last_point + 1]
+
+def outer_product_summation(x_axis : list[np.ndarray], y_axis : list[np.ndarray]) -> np.ndarray:
+    peak_count = len(x_axis)
+    if peak_count != len(y_axis):
+        raise ValueError(f"Number of peaks in the x-axis ({len(x_axis)}) does not match the peaks in the y-axis ({len(y_axis)})!")
+    
+    # Check for complex x_axis
+    is_complex_x_axis = True if np.iscomplexobj(x_axis) else False
+
+    x_axis = np.array(x_axis)
+    y_axis = np.array(y_axis)
+    y_length = y_axis.shape[-1]
+    x_length = x_axis.shape[-1]
+
+    if np.iscomplexobj(y_axis):
+        interleaved_data = np.zeros(y_axis.shape[:-1] + (y_length * 2,), dtype=y_axis.real.dtype)
+        for i in range(len(interleaved_data)):
+            interleaved_data[i][0::2] = y_axis[i].real
+            interleaved_data[i][1::2] = y_axis[i].imag
+
+        y_axis = interleaved_data
+        y_length = y_length * 2
+    
+
+    data_result = np.zeros((y_length, x_length), dtype=x_axis.dtype)
+
+    for i in range(y_length):
+        for j in range(x_length):
+            op_sum = 0j if is_complex_x_axis else 0.0
+            for k in range(peak_count):
+                if is_complex_x_axis:
+                    # NOTE : Complex FID takes noticeably longer 
+                    value = (x_axis[k][j].real * y_axis[k][i]) + (1j * x_axis[k][j].imag * y_axis[k][i])
+                else:
+                    value = x_axis[k][j] * y_axis[k][i]
+                op_sum += value
+            data_result[i][j] = op_sum
+
+    return data_result
