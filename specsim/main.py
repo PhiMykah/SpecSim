@@ -51,7 +51,7 @@ def main() -> int:
     if command_arguments.verb and command_arguments.noverb:
         verbose = True
     else:
-        verbose = command_arguments.verb and not command_arguments.no_verb
+        verbose = command_arguments.verb and not command_arguments.noverb
 
     if verbose:
         print("Simulation Parameters:")
