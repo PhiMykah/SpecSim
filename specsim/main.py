@@ -95,6 +95,8 @@ def main() -> int:
                  total_time_points, 
                  total_freq_points,
                  verbose)
+                 total_freq_points,
+                 verbose)
 
     # ------------------------------ Run Simulation ------------------------------ #
 
