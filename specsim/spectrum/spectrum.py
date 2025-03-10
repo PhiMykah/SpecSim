@@ -1,4 +1,4 @@
-import sys
+import sys, time
 import re
 from pathlib import Path
 from ..peak import Peak, Coordinate, Coordinate2D
@@ -53,13 +53,17 @@ class Spectrum:
     
     peaks : list[Peak]
         Line-by-line string list of all lines from the tab file
+
+    verbose : bool
+        Flag to enable verbose mode
     """
     def __init__(self, peak_table_file : File, 
                  spectral_widths : tuple[float,float], 
                  coordinate_origins : tuple[float,float],
                  observation_freqs : tuple[float,float],
                  total_time_points : tuple[int, int],
-                 total_freq_points : tuple[int, int]):
+                 total_freq_points : tuple[int, int],
+                 verbose: bool = False):
         
         if type(peak_table_file) == str:
             peak_table = Path(peak_table_file)
@@ -81,6 +85,7 @@ class Spectrum:
         self.peaks : list[Peak] = self._read_file()
         self._null_string = '*'
         self._null_value = -666
+        self.verbose = verbose
 
     # ---------------------------------------------------------------------------- #
     #                         Spectral Simulation Functions                        #
@@ -134,6 +139,8 @@ class Spectrum:
                              f"offsets={len(offsets)}, "
                              f"scaling_factors={len(scaling_factors)}")
         simulations : list[np.ndarray] = []
+        if self.verbose:
+            time_start = time.time()
         for axis in range(axis_count):
             sim_1D_peaks = self.spectral_simulation1D(model_function, peaks_simulated, axis,
                                            constant_time_region_sizes[axis],
@@ -195,7 +202,15 @@ class Spectrum:
                 spectral_data[i].append(iteration_df.array)
 
         if axis_count == 2:
-            return outer_product_summation(spectral_data[0], spectral_data[1])
+            result = outer_product_summation(spectral_data[0], spectral_data[1])
+            if self.verbose:
+                time_end = time.time()
+                if type(peaks_simulated) == list:
+                    peak_count = len(peaks_simulated)
+                else:
+                    peak_count = peaks_simulated
+                print(f"Simulation of {peak_count} peak(s) took {time_end-time_start:.3f}s", file=sys.stderr)
+
         return spectral_data
 
     def spectral_simulation1D(self, model_function : ModelFunction,
@@ -445,7 +460,13 @@ class Spectrum:
         return f"Spectrum({len(self.peaks)} peaks, " \
                f"file={self.file}, " \
                f"remarks={remarks}, " \
-               f"attributes={self.attributes})"
+               f"attributes={self.attributes}, " \
+               f"spectral_widths={self._spectral_widths}, " \
+               f"coordinate_origins={self._coordinate_origins}, " \
+               f"observation_freqs={self._observation_freqs}, " \
+               f"total_time_points={self._total_time_points}, " \
+               f"total_freq_points={self._total_freq_points}, " \
+               f"verbose={self.verbose})"
 
 # ---------------------------------------------------------------------------- #
 #                                 Optimization                                 #
@@ -677,27 +698,31 @@ def interferogram_optimization(input_spectrum: Spectrum, model_function: ModelFu
 
     # ----------------------------- Run Optimization ----------------------------- #
 
-    # //DEBUG
-    # print("Original Parameters:")
-    # print(f"X Line-widths = {initial_peak_lw_x}")
-    # print(f"Y Line-widths = {initial_peak_lw_y}")
-    # print(f"Peak Heights = {initial_peak_heights}")
+    if input_spectrum.verbose:
+        print("Original Parameters:", file=sys.stderr)
+        print(f"X Line-widths = {initial_peak_lw_x}", file=sys.stderr)
+        print(f"Y Line-widths = {initial_peak_lw_y}", file=sys.stderr)
+        print(f"Peak Heights = {initial_peak_heights}", file=sys.stderr)
 
     initial_params = np.concatenate((initial_peak_lw_x, initial_peak_lw_y, initial_peak_heights))
 
-    if method == 'lsq': 
+    if method == 'lsq':
+        verbose = 2 if input_spectrum.verbose else 0
         result = least_squares(objective_function_lsq, initial_params, '2-point',
-                            bounds, 'trf', args=optimization_args, verbose=2)
+                            bounds, 'trf', args=optimization_args, verbose=verbose, max_nfev=trial_count)
     elif method == 'basin':
+        disp = True if input_spectrum.verbose else False
         result = basinhopping(objective_function, initial_params, niter=trial_count, stepsize=0.1, 
                         minimizer_kwargs={"args": optimization_args},
-                        disp=False)
+                        disp=disp)
     elif method == 'minimize':
+        disp = True if input_spectrum.verbose else False
         result = minimize(objective_function, initial_params, 
                         args=optimization_args,
-                        method='SLSQP')
+                        method='SLSQP', options={"disp":disp})
     else:
-        x0, fval, grid, Jout = brute(objective_function, bounds, args=optimization_args, Ns=50, full_output=True, workers=-1, disp=True)
+        disp = True if input_spectrum.verbose else False
+        x0, fval, grid, Jout = brute(objective_function, bounds, args=optimization_args, Ns=50, full_output=True, workers=-1, disp=disp)
     
     if method == 'brute':
         optimized_params = x0
@@ -710,11 +735,11 @@ def interferogram_optimization(input_spectrum: Spectrum, model_function: ModelFu
     optimized_peak_lw_y = optimized_params[len(input_spectrum.peaks):2*len(input_spectrum.peaks)]
     optimized_peak_heights = optimized_params[2*len(input_spectrum.peaks):]
 
-    # //DEBUG
-    # print("Optimized Parameters:")
-    # print(f"X Line-wdiths = {optimized_peak_lw_x}")
-    # print(f"Y Line-widths = {optimized_peak_lw_y}")
-    # print(f"Peak Heights = {optimized_peak_heights}")
+    if input_spectrum.verbose:
+        print("Optimized Parameters:", file=sys.stderr)
+        print(f"X Line-wdiths = {optimized_peak_lw_x}", file=sys.stderr)
+        print(f"Y Line-widths = {optimized_peak_lw_y}", file=sys.stderr)
+        print(f"Peak Heights = {optimized_peak_heights}", file=sys.stderr)
 
 
     # ------------------------------- New Spectrum ------------------------------- #

@@ -47,6 +47,25 @@ def main() -> int:
     peak_count = 0                                              # Number of peaks to simulate
     domain = "ft1"                                              # Domain of simulation data
 
+    # Use verbose if both flags are used
+    if command_arguments.verb and command_arguments.noverb:
+        verbose = True
+    else:
+        verbose = command_arguments.verb and not command_arguments.no_verb
+
+    if verbose:
+        print("Simulation Parameters:")
+        print(f"Spectral Widths: {spectral_widths}")
+        print(f"Origins: {origins}")
+        print(f"Observation Frequencies: {observation_frequencies}")
+        print(f"Total Time Points: {total_time_points}")
+        print(f"Total Frequency Points: {total_freq_points}")
+        print(f"Phases: {phases}")
+        print(f"Scaling Factors: {scaling_factors}")
+        print(f"Offsets: {offsets}")
+        print(f"Constant Time Region Sizes: {constant_time_region_sizes}")
+        print(f"Peak Count: {peak_count}")
+        print(f"Domain: {domain}")
     # -------------------------- Optimization Parameters ------------------------- #
 
     optimization_method = command_arguments.mode
@@ -74,7 +93,8 @@ def main() -> int:
                  origins,
                  observation_frequencies,
                  total_time_points, 
-                 total_freq_points)
+                 total_freq_points,
+                 verbose)
 
     # ------------------------------ Run Simulation ------------------------------ #
 

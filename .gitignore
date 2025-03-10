@@ -4,6 +4,7 @@
 
 demo/*
 hsqc/*
+debug/*
 *.tar
 *.c
 simulated_data_*.png
