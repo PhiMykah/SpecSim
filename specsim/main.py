@@ -54,18 +54,22 @@ def main() -> int:
         verbose = command_arguments.verb and not command_arguments.noverb
 
     if verbose:
-        print("Simulation Parameters:")
-        print(f"Spectral Widths: {spectral_widths}")
-        print(f"Origins: {origins}")
-        print(f"Observation Frequencies: {observation_frequencies}")
-        print(f"Total Time Points: {total_time_points}")
-        print(f"Total Frequency Points: {total_freq_points}")
-        print(f"Phases: {phases}")
-        print(f"Scaling Factors: {scaling_factors}")
-        print(f"Offsets: {offsets}")
-        print(f"Constant Time Region Sizes: {constant_time_region_sizes}")
-        print(f"Peak Count: {peak_count}")
-        print(f"Domain: {domain}")
+        print("Simulation Parameters:", file=sys.stderr)
+        print(f"Spectral Widths: {spectral_widths}", file=sys.stderr)
+        print(f"Origins: {origins}", file=sys.stderr)
+        print(f"Observation Frequencies: {observation_frequencies}", file=sys.stderr)
+        print(f"Total Time Points: {total_time_points}", file=sys.stderr)
+        print(f"Total Frequency Points: {total_freq_points}", file=sys.stderr)
+        print(f"Phases: {phases}", file=sys.stderr)
+        print(f"Scaling Factors: {scaling_factors}", file=sys.stderr)
+        print(f"Offsets: {offsets}", file=sys.stderr)
+        print(f"Constant Time Region Sizes: {constant_time_region_sizes}", file=sys.stderr)
+        if peak_count == 0:
+           print(f"All Peaks Simulated", file=sys.stderr)
+        else:
+           print(f"Number of Peaks Simulated: {peak_count}", file=sys.stderr)
+        print(f"Domain: {domain}", file=sys.stderr)
+        print("", file=sys.stderr)
     # -------------------------- Optimization Parameters ------------------------- #
 
     optimization_method = command_arguments.mode
@@ -93,8 +97,6 @@ def main() -> int:
                  origins,
                  observation_frequencies,
                  total_time_points, 
-                 total_freq_points,
-                 verbose)
                  total_freq_points,
                  verbose)
 

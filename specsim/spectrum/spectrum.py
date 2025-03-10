@@ -1,4 +1,4 @@
-import sys, time
+import sys, time, io
 import re
 from pathlib import Path
 from ..peak import Peak, Coordinate, Coordinate2D
@@ -139,8 +139,8 @@ class Spectrum:
                              f"offsets={len(offsets)}, "
                              f"scaling_factors={len(scaling_factors)}")
         simulations : list[np.ndarray] = []
-        if self.verbose:
-            time_start = time.time()
+        # // Debug
+        # time_start = time.time()
         for axis in range(axis_count):
             sim_1D_peaks = self.spectral_simulation1D(model_function, peaks_simulated, axis,
                                            constant_time_region_sizes[axis],
@@ -203,14 +203,14 @@ class Spectrum:
 
         if axis_count == 2:
             result = outer_product_summation(spectral_data[0], spectral_data[1])
-            if self.verbose:
-                time_end = time.time()
-                if type(peaks_simulated) == list:
-                    peak_count = len(peaks_simulated)
-                else:
-                    peak_count = peaks_simulated
-                print(f"Simulation of {peak_count} peak(s) took {time_end-time_start:.3f}s", file=sys.stderr)
 
+            # // Debug
+            # time_end = time.time()
+            # peak_count = (len(peaks_simulated) if isinstance(peaks_simulated, list) 
+            #             else (len(self.peaks) if peaks_simulated == 0 else peaks_simulated))
+            # print(f"Simulation of {peak_count} peak(s) took {time_end-time_start:.3f}s")
+
+            return result
         return spectral_data
 
     def spectral_simulation1D(self, model_function : ModelFunction,
