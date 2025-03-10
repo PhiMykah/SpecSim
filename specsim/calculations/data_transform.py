@@ -88,18 +88,11 @@ def outer_product_summation(x_axis : list[np.ndarray], y_axis : list[np.ndarray]
         y_length = y_length * 2
     
 
-    data_result = np.zeros((y_length, x_length), dtype=x_axis.dtype)
-
-    for i in range(y_length):
-        for j in range(x_length):
-            op_sum = 0j if is_complex_x_axis else 0.0
-            for k in range(peak_count):
-                if is_complex_x_axis:
-                    # NOTE : Complex FID takes noticeably longer 
-                    value = (x_axis[k][j].real * y_axis[k][i]) + (1j * x_axis[k][j].imag * y_axis[k][i])
-                else:
-                    value = x_axis[k][j] * y_axis[k][i]
-                op_sum += value
-            data_result[i][j] = op_sum
-
+    if is_complex_x_axis:
+        real_part = np.einsum('ki,kj->ji', x_axis.real, y_axis)
+        imag_part = np.einsum('ki,kj->ji', x_axis.imag, y_axis)
+        data_result = real_part + 1j * imag_part
+    else:
+        data_result = np.einsum('ki,kj->ji', x_axis, y_axis)
+    
     return data_result
