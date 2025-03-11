@@ -23,6 +23,15 @@ def parse_command_line(argument_list : str) -> argparse.Namespace:
     parser.add_argument('-noverb', "-noverbose", action='store_true', help='Verbose Mode OFF.') #
     parser.add_argument('-report', action='store_true', help='Report Mode ON.')
     parser.add_argument('-freq', type=float, nargs='+', default=None, help='Frequency Positions (list of floats).')
+    parser.add_argument('-initXDecay', '-initDecay', type=float, default=2.0, help='Initial x-axis decay value in Hz.')
+    parser.add_argument('-initYDecay', type=float, default=0.0, help='Initial y-axis decay value in Hz.')
+    parser.add_argument('-xDecayLB', '-decayLB', type=float, default=0.0, help='Lower bound for x-decay in Hz.')
+    parser.add_argument('-xDecayUB', '-decayUB', type=float, default=100.0, help='Upper bound for x-decay in Hz.')
+    parser.add_argument('-yDecayLB', type=float, default=0.0, help='Lower bound for y-decay in Hz.')
+    parser.add_argument('-yDecayUB', type=float, default=20.0, help='Upper bound for y-decay in Hz.')
+    parser.add_argument('-ampLB', type=float, default=0.0, help='Lower bound for amplitude.')
+    parser.add_argument('-ampUB', type=float, default=10.0, help='Upper bound for amplitude.')
+    parser.add_argument('-step', type=float, default=0.1, help='Step-size for optimizations that require step-size (e.g. basin).')
     parser.add_argument('-eDecay', type=float, nargs='+', default=None, help='Exponential Decays (list of floats).')
     parser.add_argument('-eAmp', type=str, default='Auto', help='Exponential Amplitudes, or Keyword Auto.')
     parser.add_argument('-gDecay', type=str, default=None, help='Gaussian Decays (Pts Hz ppm %%).')
@@ -123,6 +132,24 @@ class SpecSimArgs:
         Path to the report file.
     freq : float
         Frequency of the simulation.
+    initXDecay : float
+        Initial x-axis decay value in Hz.
+    initYDecay : float
+        Initial y-axis decay value in Hz.
+    xDecayLB : float
+        Lower bound for decay in Hz.
+    xDecayUB : float
+        Upper bound for decay in Hz.
+    yDecayLB : float
+        Lower bound for y-decay in Hz.
+    yDecayUB : float
+        Upper bound for y-decay in Hz.
+    ampLB : float
+        Lower bound for amplitude.
+    ampUB : float
+        Upper bound for amplitude.
+    step : float
+        Step-size for optimizations that require step-size (e.g. basin).
     eDecay : float
         Exponential decay constant.
     eAmp : float
@@ -176,7 +203,6 @@ class SpecSimArgs:
         self.rx1: int = args.rx1
         self.rxn: int = args.rxn
         self.mode: str = args.mode
-        self.mode: str = args.mode
         self.trials: int = args.trials
         self.maxFail: int = args.maxFail
         self.iseed: int = args.iseed
@@ -184,6 +210,15 @@ class SpecSimArgs:
         self.noverb: bool = args.noverb
         self.report: bool = args.report
         self.freq: list[float] = args.freq
+        self.initXDecay : float = args.initXDecay
+        self.initYDecay : float = args.initYDecay
+        self.xDecayLB : float = args.xDecayLB
+        self.xDecayUB : float = args.xDecayUB
+        self.yDecayLB : float = args.yDecayLB
+        self.yDecayUB : float = args.yDecayUB
+        self.ampLB : float = args.ampLB
+        self.ampUB : float = args.ampUB
+        self.step: float = args.step
         self.eDecay: list[float] = args.eDecay
         self.eAmp: str = args.eAmp
         self.gDecay: str = args.gDecay
@@ -206,12 +241,15 @@ class SpecSimArgs:
         self.notdj: bool = args.notdj
 
     def __str__(self):
-        return (f"SpecSimArgs(tab={self.tab}, fid={self.fid}, ft={self.ft}, apod={self.apod}, out={self.out}, "
-                f"res={self.res}, scale={self.scale}, rx1={self.rx1}, rxn={self.rxn}, trials={self.trials}, "
+        return (f"SpecSimArgs(tab={self.tab}, fid={self.fid}, ft1={self.ft1}, ft2={self.ft2}, apod={self.apod}, out={self.out}, "
+                f"res={self.res}, scale={self.scale}, rx1={self.rx1}, rxn={self.rxn}, mode={self.mode}, trials={self.trials}, "
                 f"maxFail={self.maxFail}, iseed={self.iseed}, verb={self.verb}, noverb={self.noverb}, "
-                f"report={self.report}, freq={self.freq}, eDecay={self.eDecay}, eAmp={self.eAmp}, "
-                f"gDecay={self.gDecay}, gAmp={self.gAmp}, xOff={self.xOff}, j1={self.j1}, j2={self.j2}, "
-                f"j3={self.j3}, xP0={self.xP0}, xP1={self.xP1}, yP0={self.yP0}, yP1={self.yP1}, ePhase={self.ePhase}, gPhase={self.gPhase}, "
+                f"report={self.report}, freq={self.freq}, initXDecay={self.initXDecay}, initYDecay={self.initYDecay}, "
+                f"xDecayLB={self.xDecayLB}, xDecayUB={self.xDecayUB}, yDecayLB={self.yDecayLB}, yDecayUB={self.yDecayUB}, "
+                f"ampLB={self.ampLB}, ampUB={self.ampUB}, step={self.step}, "
+                f"eDecay={self.eDecay}, eAmp={self.eAmp}, gDecay={self.gDecay}, gAmp={self.gAmp}, "
+                f"xOff={self.xOff}, j1={self.j1}, j2={self.j2}, j3={self.j3}, "
+                f"xP0={self.xP0}, xP1={self.xP1}, yP0={self.yP0}, yP1={self.yP1}, ePhase={self.ePhase}, gPhase={self.gPhase}, "
                 f"ts={self.ts}, nots={self.nots}, notdd={self.notdd}, tdd={self.tdd}, tdj={self.tdj}, "
                 f"notdj={self.notdj})")
         

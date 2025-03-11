@@ -72,8 +72,22 @@ def main() -> int:
         print("", file=sys.stderr)
     # -------------------------- Optimization Parameters ------------------------- #
 
-    optimization_method = command_arguments.mode
-    trial_count = command_arguments.trials
+    optimization_method = command_arguments.mode                                    # Optimization method
+    trial_count = command_arguments.trials                                          # Maximum number of trials
+    trial_step_size = command_arguments.step                                        # Step-size for step-sized based optimizations
+    initial_decay = (command_arguments.initXDecay, command_arguments.initYDecay)    # Initial decay values for optimization
+    decay_bounds = [(command_arguments.xDecayLB, command_arguments.xDecayUB),       # Bounds of decays in simulation optimization
+                    (command_arguments.yDecayLB, command_arguments.yDecayUB)]       # Bounds of decays in simulation optimization
+    amplitude_bounds = (command_arguments.ampLB, command_arguments.ampUB)           # Bounds of amplitude in simulation optimization
+
+    optimization_params = {
+        "trials" : trial_count,
+        "step" : trial_step_size,
+        "initDecay" : initial_decay,
+        "dxBounds" : decay_bounds[0],
+        "dyBounds" : decay_bounds[1],
+        "aBounds" : amplitude_bounds,
+    }
 
     # Set domain and output file based on whether one is included
     if output_file != None:
@@ -89,6 +103,18 @@ def main() -> int:
     # Select method based on input 
     template_file = Path(command_arguments.ft1).stem.lower()
     simulation_model = Model.from_filename(template_file)
+
+    if verbose:
+        print("Optimization Parameters:", file=sys.stderr)
+        print(f"Optimization Method: {optimization_method}", file=sys.stderr)
+        print(f"Optimization Model: {simulation_model}", file=sys.stderr)
+        print(f"Trial Count: {trial_count}", file=sys.stderr)
+        print(f"Trial Step Size: {trial_step_size}", file=sys.stderr)
+        print(f"Initial Decay: {initial_decay}", file=sys.stderr)
+        print(f"x-Decay Bounds: {decay_bounds[0]}", file=sys.stderr)
+        print(f"y-Decay Bounds: {decay_bounds[1]}", file=sys.stderr)
+        print(f"Amplitude Bounds: {amplitude_bounds}", file=sys.stderr)
+        print("", file=sys.stderr)
 
     # ------------------------------ Spectrum Class ------------------------------ #
 
@@ -137,7 +163,7 @@ def main() -> int:
     target_data_fid = pype.DataFrame(command_arguments.fid)
     optimized_output = pype.DataFrame(command_arguments.ft1)
     sim_params = (constant_time_region_sizes, phases, offsets, scaling_factors)
-    new_spectrum = interferogram_optimization(test_spectrum, model_function, target_data_fid, target_data, optimization_method, trial_count, sim_params)
+    new_spectrum = interferogram_optimization(test_spectrum, model_function, target_data_fid, target_data, optimization_method, sim_params, optimization_params)
     new_spectrum_data = new_spectrum.spectral_simulation(model_function, optimized_output, data_fid, axis_count,
                                                              peak_count, domain, constant_time_region_sizes,
                                                              phases, offsets, scaling_factors)

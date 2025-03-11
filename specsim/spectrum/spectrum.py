@@ -441,7 +441,7 @@ class Spectrum:
             new_peak = string_to_peak(
                     file_lines.pop(0), self.attributes, self.file, line_number,
                     (self._spectral_widths, self._coordinate_origins,
-                     self._observation_freqs, self._total_time_points))
+                     self._observation_freqs, self._total_freq_points))
             
             if new_peak:  
                 peaks.append(new_peak)  
@@ -609,8 +609,8 @@ def objective_function(params, input_spectrum : Spectrum, model_function : Model
     return difference
     
 def interferogram_optimization(input_spectrum: Spectrum, model_function: ModelFunction, input_fid : pype.DataFrame,
-                               target_interferogram: pype.DataFrame, method : str = 'lsq', trial_count : int = 100, 
-                               sim_params : tuple = ()) -> Spectrum:
+                               target_interferogram: pype.DataFrame, method: str = 'lsq', sim_params : tuple = (), 
+                               options: dict = {}) -> Spectrum:
     """
     Optimize a Spectrum peak table to match the original interferogram data without window functions
 
@@ -627,8 +627,15 @@ def interferogram_optimization(input_spectrum: Spectrum, model_function: ModelFu
     trial_count : int
         Number of trials to run for optimization
     sim_params : tuple
-        pectral simulation function extra parameters
-
+        Spectral simulation function extra parameters
+    options : dict
+        Optimization parameters, by default {}
+        "trials" : number of trials to perform
+        "step" : step-size of optimization
+        "initDecay" : tuple of initial decay values for optimization in Hz
+        "dXBounds": tuple of lower and upper bounds for x-axis decay in Hz
+        "dYBounds": tuple of lower and upper bounds for y-axis decay in Hz
+        "aBounds": tuple of lower and upper bounds for decay
     Returns
     -------
     Spectrum
@@ -641,58 +648,80 @@ def interferogram_optimization(input_spectrum: Spectrum, model_function: ModelFu
 
     optimization_args = (input_spectrum, model_function, input_fid, target_interferogram, sim_params)
 
+    # ----------------------------- Initial Settings ----------------------------- #
+
+    trial_count = options.get("trials", 100)
+    step_size = options.get("step", 0.1)
+    initial_decay = options.get("initDecay", (15, 5))
+    decay_bounds_x = options.get("dxBounds", (0, 100))
+    decay_bounds_y = options.get("dyBounds", (0, 20))
+    amplitude_bounds = options.get("aBounds", (0, 150))
+
+    # Ensure that the second element of bounds is greater than the first element
+    for i, (low, high) in enumerate([decay_bounds_x, decay_bounds_y, amplitude_bounds]):
+        if high <= low:
+            bound_type = "decay"
+            match i:
+                case 1:
+                    bound_type = "x-decay bounds"
+                case 2:
+                    bound_type = "y-decay bounds"
+                case 2:
+                    bound_type = "amplitude"
+            
+            raise ValueError(f"Upper bound must be greater than lower bound for {bound_type} parameter: "
+                             f"lower={low}, upper={high}")
+    # Ensure initial decay values are within bounds
+    if not (decay_bounds_x[0] <= initial_decay[0] <= decay_bounds_x[1]):
+        print(f"Warning: Initial decay value for x-axis ({initial_decay[0]}) is out of bounds {decay_bounds_x}. Adjusting to midpoint.", file=sys.stderr)
+        initial_decay = ((decay_bounds_x[0] + decay_bounds_x[1]) / 2, initial_decay[1])
+    if not (decay_bounds_y[0] <= initial_decay[1] <= decay_bounds_y[1]):
+        print(f"Warning: Initial decay value for y-axis ({initial_decay[1]}) is out of bounds {decay_bounds_y}. Adjusting to midpoint.", file=sys.stderr)
+        initial_decay = (initial_decay[0], (decay_bounds_y[0] + decay_bounds_y[1]) / 2)
+
+    
     # ------------------------------- Initial Guess ------------------------------ #
 
     # ----------------------------------- NOTE ----------------------------------- #
     # NOTE: Modify initial peak values and bounds later on, currently changed as needed
 
+    starting_x = (initial_decay[0]/input_spectrum._spectral_widths[0]) * input_spectrum._total_time_points[0]
+
+    starting_y = (initial_decay[1]/input_spectrum._spectral_widths[1]) * input_spectrum._total_time_points[1]
+
+    # Initial parameter bounds
+    lower_bound_x = (decay_bounds_x[0]/input_spectrum._spectral_widths[0]) * input_spectrum._total_time_points[0]
+    
+    upper_bound_x = (decay_bounds_x[1]/input_spectrum._spectral_widths[0]) * input_spectrum._total_time_points[0]
+
+    lower_bound_y = (decay_bounds_y[0]/input_spectrum._spectral_widths[1]) * input_spectrum._total_time_points[1]
+    
+    upper_bound_y = (decay_bounds_y[1]/input_spectrum._spectral_widths[1]) * input_spectrum._total_time_points[1]
+
+    # Collect initial parameters
+    initial_peak_lw_x = [starting_x] * len(input_spectrum.peaks) # Initial peak x linewidths
+    initial_peak_lw_y = [starting_y] * len(input_spectrum.peaks) # Initial peak y linewidths
+    initial_peak_heights = [peak.intensity for peak in input_spectrum.peaks] # Initial peak heights
+
     if method == 'lsq':
-        initial_peak_lw_x = [2] * len(input_spectrum.peaks) # Initial peak x linewidths
-        initial_peak_lw_y = [2] * len(input_spectrum.peaks) # Initial peak y linewidths
-        initial_peak_heights = [peak.intensity for peak in input_spectrum.peaks] # Initial peak heights
+        # --------------------------- Least Squares Bounds --------------------------- #
 
-        bounds_lsq_low = ([0] * 2 * len(input_spectrum.peaks)) + ([-np.inf] * len(input_spectrum.peaks)) 
-        bounds_lsq_high = ([8] * 2 * len(input_spectrum.peaks)) + ([np.inf] * len(input_spectrum.peaks))
+        bounds_lsq_low = ([lower_bound_x] * len(input_spectrum.peaks)) \
+                       + ([lower_bound_y] * len(input_spectrum.peaks)) \
+                       + ([amplitude_bounds[0]] * len(input_spectrum.peaks)) 
+        bounds_lsq_high = ([upper_bound_x] * len(input_spectrum.peaks)) \
+                       + ([upper_bound_y] * len(input_spectrum.peaks)) \
+                       + ([amplitude_bounds[1]] * len(input_spectrum.peaks)) 
         bounds = (bounds_lsq_low, bounds_lsq_high)
+
     else: 
-        # Initial guess for the parameters,
-        # Start with a (15, 5) hz linewidth
-        starting_x = Coordinate(0, 
-                                input_spectrum._spectral_widths[0], input_spectrum._coordinate_origins[0],
-                                input_spectrum._observation_freqs[0], input_spectrum._total_time_points[0])
-        starting_x.hz = 15.0
-
-        starting_y = Coordinate(0, 
-                                input_spectrum._spectral_widths[1], input_spectrum._coordinate_origins[1],
-                                input_spectrum._observation_freqs[1], input_spectrum._total_time_points[1])
-        starting_y.hz = 5.0
-
-        # Initial parameter bounds
-        upper_bound = Coordinate(0, 
-                                input_spectrum._spectral_widths[0], input_spectrum._coordinate_origins[0],
-                                input_spectrum._observation_freqs[0], input_spectrum._total_time_points[0])
-        upper_bound.hz = 25.0
-        
-        lower_bound = Coordinate(0, 
-                                input_spectrum._spectral_widths[1], input_spectrum._coordinate_origins[1],
-                                input_spectrum._observation_freqs[1], input_spectrum._total_time_points[1])
-        lower_bound.hz = 5.0
-
-        # Collect initial parameters
-        initial_peak_lw_x = [starting_x.pts] * len(input_spectrum.peaks) # Initial peak x linewidths
-        initial_peak_lw_y = [starting_y.pts] * len(input_spectrum.peaks) # Initial peak y linewidths
-        initial_peak_heights = [peak.intensity for peak in input_spectrum.peaks] # Initial peak heights
-
         # ---------------------------------- Bounds ---------------------------------- #
 
-        # x_axis_bounds = [(lower_bound.pts, upper_bound.pts)] * len(input_spectrum.peaks) # X-axis linewidth bounds
-        x_axis_bounds = [(1, 3)] * len(input_spectrum.peaks)
-        # y_axis_bounds = [(lower_bound.pts, upper_bound.pts)] * len(input_spectrum.peaks) # Y-axis linewidth bounds
-        y_axis_bounds = [(1, 3)] * len(input_spectrum.peaks)
-        if method != 'brute':
-            intensity_bounds = [(0, np.inf)] * len(input_spectrum.peaks) # Peak height bounds (non-negative)
-        else:
-            intensity_bounds = [(0, 150)] * len(input_spectrum.peaks) # Peak height bounds (non-negative)
+        x_axis_bounds = [(lower_bound_x, upper_bound_x)] * len(input_spectrum.peaks) # X-axis linewidth bounds
+
+        y_axis_bounds = [(lower_bound_y, upper_bound_y)] * len(input_spectrum.peaks) # Y-axis linewidth bounds
+
+        intensity_bounds = [amplitude_bounds] * len(input_spectrum.peaks) # Peak height bounds (non-negative)
 
         bounds = x_axis_bounds + y_axis_bounds + intensity_bounds
 
@@ -703,6 +732,7 @@ def interferogram_optimization(input_spectrum: Spectrum, model_function: ModelFu
         print(f"X Line-widths = {initial_peak_lw_x}", file=sys.stderr)
         print(f"Y Line-widths = {initial_peak_lw_y}", file=sys.stderr)
         print(f"Peak Heights = {initial_peak_heights}", file=sys.stderr)
+        print("", file=sys.stderr)
 
     initial_params = np.concatenate((initial_peak_lw_x, initial_peak_lw_y, initial_peak_heights))
 
@@ -712,7 +742,7 @@ def interferogram_optimization(input_spectrum: Spectrum, model_function: ModelFu
                             bounds, 'trf', args=optimization_args, verbose=verbose, max_nfev=trial_count)
     elif method == 'basin':
         disp = True if input_spectrum.verbose else False
-        result = basinhopping(objective_function, initial_params, niter=trial_count, stepsize=0.1, 
+        result = basinhopping(objective_function, initial_params, niter=trial_count, stepsize=step_size, 
                         minimizer_kwargs={"args": optimization_args},
                         disp=disp)
     elif method == 'minimize':
@@ -722,7 +752,7 @@ def interferogram_optimization(input_spectrum: Spectrum, model_function: ModelFu
                         method='SLSQP', options={"disp":disp})
     else:
         disp = True if input_spectrum.verbose else False
-        x0, fval, grid, Jout = brute(objective_function, bounds, args=optimization_args, Ns=50, full_output=True, workers=-1, disp=disp)
+        x0, fval, grid, Jout = brute(objective_function, bounds, args=optimization_args, Ns=20, full_output=True, workers=-1, disp=disp)
     
     if method == 'brute':
         optimized_params = x0
@@ -736,11 +766,12 @@ def interferogram_optimization(input_spectrum: Spectrum, model_function: ModelFu
     optimized_peak_heights = optimized_params[2*len(input_spectrum.peaks):]
 
     if input_spectrum.verbose:
+        print("", file=sys.stderr)
         print("Optimized Parameters:", file=sys.stderr)
         print(f"X Line-wdiths = {optimized_peak_lw_x}", file=sys.stderr)
         print(f"Y Line-widths = {optimized_peak_lw_y}", file=sys.stderr)
         print(f"Peak Heights = {optimized_peak_heights}", file=sys.stderr)
-
+        print("", file=sys.stderr)
 
     # ------------------------------- New Spectrum ------------------------------- #
 
