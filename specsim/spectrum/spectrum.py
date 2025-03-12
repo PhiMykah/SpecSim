@@ -678,7 +678,6 @@ def interferogram_optimization(input_spectrum: Spectrum, model_function: ModelFu
     if not (decay_bounds_y[0] <= initial_decay[1] <= decay_bounds_y[1]):
         print(f"Warning: Initial decay value for y-axis ({initial_decay[1]}) is out of bounds {decay_bounds_y}. Adjusting to midpoint.", file=sys.stderr)
         initial_decay = (initial_decay[0], (decay_bounds_y[0] + decay_bounds_y[1]) / 2)
-
     
     # ------------------------------- Initial Guess ------------------------------ #
 
@@ -702,6 +701,16 @@ def interferogram_optimization(input_spectrum: Spectrum, model_function: ModelFu
     initial_peak_lw_x = [starting_x] * len(input_spectrum.peaks) # Initial peak x linewidths
     initial_peak_lw_y = [starting_y] * len(input_spectrum.peaks) # Initial peak y linewidths
     initial_peak_heights = [peak.intensity for peak in input_spectrum.peaks] # Initial peak heights
+
+    # Find the largest and smallest peak heights in the initial guess
+    min_peak_height = min(initial_peak_heights)
+    max_peak_height = max(initial_peak_heights)
+
+    # Adjust the height bounds if they escape
+    if min_peak_height < amplitude_bounds[0]:
+        amplitude_bounds = (2 * min_peak_height if min_peak_height < 0 else min_peak_height / 2, amplitude_bounds[1])
+    if max_peak_height > amplitude_bounds[1]:
+        amplitude_bounds = (amplitude_bounds[0], max_peak_height * 2 if max_peak_height > 0 else max_peak_height / 2)
 
     if method == 'lsq':
         # --------------------------- Least Squares Bounds --------------------------- #
@@ -729,9 +738,9 @@ def interferogram_optimization(input_spectrum: Spectrum, model_function: ModelFu
 
     if input_spectrum.verbose:
         print("Original Parameters:", file=sys.stderr)
-        print(f"X Line-widths = {initial_peak_lw_x}", file=sys.stderr)
-        print(f"Y Line-widths = {initial_peak_lw_y}", file=sys.stderr)
-        print(f"Peak Heights = {initial_peak_heights}", file=sys.stderr)
+        print(f"X Line-widths = {initial_peak_lw_x[0]}", file=sys.stderr)
+        print(f"Y Line-widths = {initial_peak_lw_y[0]:.3f}", file=sys.stderr)
+        print(f"Peak Heights = {initial_peak_heights[0]:.3f}", file=sys.stderr)
         print("", file=sys.stderr)
 
     initial_params = np.concatenate((initial_peak_lw_x, initial_peak_lw_y, initial_peak_heights))
