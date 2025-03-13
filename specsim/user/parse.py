@@ -25,12 +25,11 @@ def parse_command_line(argument_list : str) -> argparse.Namespace:
     parser.add_argument('-freq', type=float, nargs='+', default=None, help='Frequency Positions (list of floats).')
     parser.add_argument('-initXDecay', '-initDecay', type=float, default=2.0, help='Initial x-axis decay value in Hz.')
     parser.add_argument('-initYDecay', type=float, default=0.0, help='Initial y-axis decay value in Hz.')
-    parser.add_argument('-xDecayLB', '-decayLB', type=float, default=0.0, help='Lower bound for x-decay in Hz.')
-    parser.add_argument('-xDecayUB', '-decayUB', type=float, default=100.0, help='Upper bound for x-decay in Hz.')
-    parser.add_argument('-yDecayLB', type=float, default=0.0, help='Lower bound for y-decay in Hz.')
-    parser.add_argument('-yDecayUB', type=float, default=20.0, help='Upper bound for y-decay in Hz.')
-    parser.add_argument('-ampLB', type=float, default=0.0, help='Lower bound for amplitude.')
-    parser.add_argument('-ampUB', type=float, default=10.0, help='Upper bound for amplitude.')
+    parser.add_argument('-xDecayBounds', type=float, nargs=2, default=[0.0, 100.0], metavar=('LOWER', 'HIGHER'), help='Lower and upper bounds for x-decay in Hz.')
+    parser.add_argument('-yDecayBounds', type=float, nargs=2, default=[0.0, 20.0], metavar=('LOWER', 'HIGHER'), help='Lower and upper bounds for y-decay in Hz.')
+    parser.add_argument('-ampBounds', type=float, nargs=2, default=[0.0, 10.0], metavar=('LOWER', 'HIGHER'), help='Lower and upper bounds for amplitude.')
+    parser.add_argument('-p0Bounds', type=float, nargs=2, default=[-180.0, 180.0], metavar=('LOWER', 'UPPER'), help='Lower and upper bounds for p0 phase correction.')
+    parser.add_argument('-p1Bounds', type=float, nargs=2, default=[-180.0, 180.0], metavar=('LOWER', 'UPPER'), help='Lower and upper bounds for p1 phase correction.')
     parser.add_argument('-step', type=float, default=0.1, help='Step-size for optimizations that require step-size (e.g. basin).')
     parser.add_argument('-eDecay', type=float, nargs='+', default=None, help='Exponential Decays (list of floats).')
     parser.add_argument('-eAmp', type=str, default='Auto', help='Exponential Amplitudes, or Keyword Auto.')
@@ -212,12 +211,11 @@ class SpecSimArgs:
         self.freq: list[float] = args.freq
         self.initXDecay : float = args.initXDecay
         self.initYDecay : float = args.initYDecay
-        self.xDecayLB : float = args.xDecayLB
-        self.xDecayUB : float = args.xDecayUB
-        self.yDecayLB : float = args.yDecayLB
-        self.yDecayUB : float = args.yDecayUB
-        self.ampLB : float = args.ampLB
-        self.ampUB : float = args.ampUB
+        self.xDecayBounds: list[float] = args.xDecayBounds
+        self.yDecayBounds: list[float] = args.yDecayBounds
+        self.ampBounds: list[float] = args.ampBounds
+        self.p0Bounds: list[float] = args.p0Bounds
+        self.p1Bounds: list[float] = args.p1Bounds
         self.step: float = args.step
         self.eDecay: list[float] = args.eDecay
         self.eAmp: str = args.eAmp
@@ -245,8 +243,8 @@ class SpecSimArgs:
                 f"res={self.res}, scale={self.scale}, rx1={self.rx1}, rxn={self.rxn}, mode={self.mode}, trials={self.trials}, "
                 f"maxFail={self.maxFail}, iseed={self.iseed}, verb={self.verb}, noverb={self.noverb}, "
                 f"report={self.report}, freq={self.freq}, initXDecay={self.initXDecay}, initYDecay={self.initYDecay}, "
-                f"xDecayLB={self.xDecayLB}, xDecayUB={self.xDecayUB}, yDecayLB={self.yDecayLB}, yDecayUB={self.yDecayUB}, "
-                f"ampLB={self.ampLB}, ampUB={self.ampUB}, step={self.step}, "
+                f"xDecayBounds={self.xDecayBounds}, yDecayBounds={self.yDecayBounds}, "
+                f"ampBounds={self.ampBounds}, p0Bounds={self.p0Bounds}, p1Bounds={self.p1Bounds}, step={self.step}, "
                 f"eDecay={self.eDecay}, eAmp={self.eAmp}, gDecay={self.gDecay}, gAmp={self.gAmp}, "
                 f"xOff={self.xOff}, j1={self.j1}, j2={self.j2}, j3={self.j3}, "
                 f"xP0={self.xP0}, xP1={self.xP1}, yP0={self.yP0}, yP1={self.yP1}, ePhase={self.ePhase}, gPhase={self.gPhase}, "

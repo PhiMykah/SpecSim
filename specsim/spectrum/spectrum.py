@@ -1,8 +1,9 @@
 import sys, time, io
 import re
 from pathlib import Path
-from ..peak import Peak, Coordinate, Coordinate2D
+from ..peak import Peak, Coordinate, Coordinate2D, Phase
 from ..calculations import outer_product_summation, extract_region
+from ..debug.verbose import errPrint
 import numpy as np
 from scipy.optimize import basinhopping, minimize, brute, least_squares
 
@@ -98,7 +99,8 @@ class Spectrum:
                             peaks_simulated : list[int] | int = 0, 
                             domain : str = 'ft1',
                             constant_time_region_sizes : Annotated[list[int], 2] = [0, 0],
-                            phase_values : Annotated[list[tuple[int,int]], 2] = [(0,0),(0,0)],
+                            set_phase_values : bool = True,
+                            phase_values : Annotated[list[Phase], 2] = [Phase(0,0),Phase(0,0)],
                             offsets : Annotated[list[int], 2] = [0,0],
                             scaling_factors : Annotated[list[float], 2] = [1.0, 1.0]):
         """
@@ -124,8 +126,10 @@ class Spectrum:
                 - 'ft2' for full spectrum
         constant_time_region_sizes : Annotated[list[int], 2], optional
             Total number of points in the constain time regions (pts), by default [0, 0]
+        set_phase_values : bool, optional
+            Update phase values for each peak to phase_values parameter, by default True
         phase_values : Annotated[list[tuple[int,int]], 2], optional
-            multi-axis p0 and p1 phase correction values, by default [(0,0),(0,0)]
+            multi-axis p0 and p1 phase correction values, by default [Phase(0,0),Phase(0,0)]
         offsets : Annotated[list[int], 2], optional
             multi-axis offset values of the frequency domain in points, by default [0,0]
         scaling_factors : Annotated[list[float], 2], optional
@@ -144,6 +148,7 @@ class Spectrum:
         for axis in range(axis_count):
             sim_1D_peaks = self.spectral_simulation1D(model_function, peaks_simulated, axis,
                                            constant_time_region_sizes[axis],
+                                           set_phase_values,
                                            phase_values[axis],
                                            offsets[axis],
                                            scaling_factors[axis])
@@ -217,6 +222,7 @@ class Spectrum:
                            peaks_simulated : list[int] | int = 0, 
                            axis : int = X,
                            constant_time_region_size : int = 0,
+                           set_phase_value : bool = True,
                            phase : tuple[int,int] = (0,0),
                            offset : int = 0,
                            scaling_factor : float = 1.0) -> np.ndarray:
@@ -234,6 +240,8 @@ class Spectrum:
             Designated axis to simulate, e.g. 0 for 'x', 1 for 'y'.
         constant_time_region_size : int
             Total number of points in the constain time region (pts), by default 0
+        set_phase_values : bool, optional
+            Update phase values for each peak to phase_values parameter, by default True
         phase : tuple[int,int]
             p0 and p1 phase correction values, by default (0,0)
         offset : int
@@ -284,16 +292,18 @@ class Spectrum:
         # Iterate through given peaks in the spectrum
         for i in peak_indices:
             spectrum_list.append(self._run_simulation_iteration(model_function, i,
-                                            axis, constant_time_region_size, phase,
-                                            offset, scaling_factor))
+                                            axis, constant_time_region_size, offset, scaling_factor,
+                                            set_phase_value, phase))
             
         return np.array(spectrum_list)
 
     def _run_simulation_iteration(self, model_function : ModelFunction, 
                                   index : int, axis : int, constant_time_region_size : int,
-                                  phase : tuple[int,int], 
-                                  offset : int, 
-                                  scaling_factor : float) -> np.ndarray:
+                                  offset : int,
+                                  scaling_factor : float,
+                                  set_phase_value : bool = True,
+                                  phase : Phase = Phase(0,0)
+                                  ) -> np.ndarray:
         """
         Run a single iteration of a spectral time domain simulation.
 
@@ -322,6 +332,12 @@ class Spectrum:
 
         if axis not in [X, Y]:
             TypeError("Incorrect Axis Type for Simulation, please enter a supported axis type.")
+
+        if set_phase_value:
+            if axis == X:
+                self.peaks[index].xPhase = phase
+            if axis == Y:
+                self.peaks[index].yPhase = phase
 
         # Obtain frequency and add offset if necessary
         frequency_pts = self.peaks[index].position[axis] + offset
@@ -353,7 +369,7 @@ class Spectrum:
                            line_width,
                            cos_mod_values=cos_mod_j,
                            sin_mod_values=sin_mod_j,
-                           amplitude=amplitude, phase=phase,
+                           amplitude=amplitude, phase=self.peaks[index].phase[axis],
                            scale=scaling_factor))
 
     # ---------------------------------------------------------------------------- #
@@ -433,7 +449,7 @@ class Spectrum:
                 map(lambda key,value : (key,value), attribute_keys, attribute_formats))
 
         # // For debugging
-        # print(f"Header Length: {line_number}", file=sys.stderr)
+        # errPrint(f"Header Length: {line_number}")
 
         while file_lines:
             line_number += 1
@@ -448,6 +464,19 @@ class Spectrum:
 
         return peaks
     
+    # ---------------------------------------------------------------------------- #
+    #                             Peak Table Management                            #
+    # ---------------------------------------------------------------------------- #
+
+    def set_peak_phases(self, phases_list : list[Annotated[list[Phase], 2]]):
+        if len(phases_list) != len(self.peaks):
+            raise ValueError("The amount of phase pairs must be equal to the number of peaks in the spectrum.")
+        
+        for i, phase in enumerate(phases_list):
+            if len(phase) != 2:
+                raise ValueError(f"Peak #{i+1} must have a phase for x-axis and y-axis (currently {len(phase)}).")
+            self.peaks[i].phase = phase
+
     # ---------------------------------------------------------------------------- #
     #                                 Magic Methods                                #
     # ---------------------------------------------------------------------------- #
@@ -472,74 +501,7 @@ class Spectrum:
 #                                 Optimization                                 #
 # ---------------------------------------------------------------------------- #
 
-def objective_function_lsq(params, input_spectrum : Spectrum, model_function : ModelFunction, input_fid : pype.DataFrame, target_interferogram : pype.DataFrame, sim_params : tuple = ()) -> np.ndarray:
-    """
-    Function used for optimizing peak linewidths and heights of spectrum and returning the difference
-
-    Parameters
-    ----------
-    params : list
-        List of target parameters being tested (peak indices, peak linewidths, peak heights)
-    input_spectrum : Spectrum
-        Input spectrum to generate from 
-    model_function : ModelFunction
-        Spectral modeling method function (e.g. exponential, gaussian)
-    input_fid : nmrPype.DataFrame
-        Corresponding fid dataframe to perform functions
-    target_interferogram : nmrPype.DataFrame
-        Corresponding nmrPype dataframe matching header content
-    sim_params : tuple
-        spectral simulation extra params, default ()
-
-    Returns
-    -------
-    numpy.ndarray
-        Difference between simulated data and real data, as an array
-    """
-
-    # Unpack parameters
-    peak_x_lws = params[:len(input_spectrum.peaks)] # X-axis peak linewidths
-    peak_y_lws = params[len(input_spectrum.peaks):2*len(input_spectrum.peaks)] # Y-axis peak linewidths
-    peak_heights = params[2*len(input_spectrum.peaks):]
-
-    # Update peaks with the current parameters
-    for i, peak in enumerate(input_spectrum.peaks):
-        peak.linewidths.x.pts = peak_x_lws[i]
-        peak.linewidths.y.pts = peak_y_lws[i]
-        peak.intensity = peak_heights[i]
-
-    # Generate the simulated interferogram
-    simulated_interferogram = input_spectrum.spectral_simulation(model_function, target_interferogram, input_fid, 2, 0, 'ft1', *sim_params)
-
-    # ----------------------------------- DEBUG ---------------------------------- #
-
-    # simulated_fid = input_spectrum.spectral_simulation(model_function, input_fid, input_fid, domain='fid')
-    # fig, axs = plt.subplots(2, 3, figsize=(18, 12))
-    # axs[0, 0].plot(simulated_fid[0].real, label='synthetic')
-    # axs[0, 0].set_title('Synthetic FID')
-    # axs[0, 1].plot(input_fid.array[0].real, label='real')
-    # axs[0, 1].set_title('Real FID')
-    # axs[0, 2].plot(simulated_fid[0].real, label='synthetic')
-    # axs[0, 2].plot(input_fid.array[0].real, label='real')
-    # axs[0, 2].set_title('Synthetic vs Real FID')
-
-    # axs[1, 0].plot(simulated_interferogram[0].real, label='synthetic')
-    # axs[1, 0].set_title('Synthetic Interferogram')
-    # axs[1, 1].plot(target_interferogram.array[0].real, label='real')
-    # axs[1, 1].set_title('Real Interferogram')
-    # axs[1, 2].plot(simulated_interferogram[0].real, label='synthetic')
-    # axs[1, 2].plot(target_interferogram.array[0].real, label='real')
-    # axs[1, 2].set_title('Synthetic vs Real Interferogram')
-    
-    # for ax in axs.flat:
-    #     ax.legend()
-    # plt.savefig("test_difference.png")
-    # plt.close()
-
-    # Calculate the difference between the target and simulated interferograms
-    return (target_interferogram.array - simulated_interferogram).flatten()
-
-def objective_function(params, input_spectrum : Spectrum, model_function : ModelFunction, input_fid : pype.DataFrame, target_interferogram : pype.DataFrame, sim_params : tuple = ()) -> np.float32:
+def objective_function(params, input_spectrum : Spectrum, model_function : ModelFunction, input_fid : pype.DataFrame, target_interferogram : pype.DataFrame, options : dict = {}) -> np.float32:
     """
     Function used for optimizing peak linewidths and heights of spectrum
 
@@ -555,62 +517,52 @@ def objective_function(params, input_spectrum : Spectrum, model_function : Model
         Corresponding fid dataframe to perform functions
     target_interferogram : nmrPype.DataFrame
         Corresponding nmrPype dataframe matching header content
-    sim_params : tuple
-        spectral simulation extra params, default ()
-
+    options : dict
+        "difference_equation" : 
+        "offsets" : list[int]
+        "constant_time_region_sizes" : list[int]
+        "scaling_factors" : list[float]
     Returns
     -------
     np.float32
         Difference between simulated data and real data
     """
 
+    peak_count = len(input_spectrum.peaks)
+
     # Unpack parameters
-    peak_x_lws = params[:len(input_spectrum.peaks)] # X-axis peak linewidths
-    peak_y_lws = params[len(input_spectrum.peaks):2*len(input_spectrum.peaks)] # Y-axis peak linewidths
-    peak_heights = params[2*len(input_spectrum.peaks):]
+    peak_x_lws = params[:peak_count] # X-axis peak linewidths
+    peak_y_lws = params[peak_count:2*peak_count] # Y-axis peak linewidths
+    peak_heights = params[2*peak_count:3*peak_count] # Peak heights
+    phase_x = (params[3*peak_count:4*peak_count], # X-axis p0 value
+               params[4*peak_count:5*peak_count]) # X-axis p1 value
+    phase_y = (params[5*peak_count:6*peak_count], # Y-axis p0 value
+               params[6*peak_count:])             # Y-axis p1 value
 
     # Update peaks with the current parameters
     for i, peak in enumerate(input_spectrum.peaks):
         peak.linewidths.x.pts = peak_x_lws[i]
         peak.linewidths.y.pts = peak_y_lws[i]
         peak.intensity = peak_heights[i]
+        xPhase = Phase(phase_x[0][i], phase_x[1][i])
+        yPhase = Phase(phase_y[0][i], phase_y[1][i])
+        peak.phase = [xPhase, yPhase]
 
+    ctrs = options.get("constant_time_region_sizes", [0,0] )
+    offsets = options.get("offsets", [0,0])
+    scaling_factors = options.get("scaling_factors", [1.0, 1.0])
     # Generate the simulated interferogram
-    simulated_interferogram = input_spectrum.spectral_simulation(model_function, target_interferogram, input_fid, 2, 0, 'ft1', *sim_params)
-
-    # ----------------------------------- DEBUG ---------------------------------- #
-
-    # simulated_fid = input_spectrum.spectral_simulation(model_function, input_fid, input_fid, domain='fid')
-    # fig, axs = plt.subplots(2, 3, figsize=(18, 12))
-    # axs[0, 0].plot(simulated_fid[0].real, label='synthetic')
-    # axs[0, 0].set_title('Synthetic FID')
-    # axs[0, 1].plot(input_fid.array[0].real, label='real')
-    # axs[0, 1].set_title('Real FID')
-    # axs[0, 2].plot(simulated_fid[0].real, label='synthetic')
-    # axs[0, 2].plot(input_fid.array[0].real, label='real')
-    # axs[0, 2].set_title('Synthetic vs Real FID')
-
-    # axs[1, 0].plot(simulated_interferogram[0].real, label='synthetic')
-    # axs[1, 0].set_title('Synthetic Interferogram')
-    # axs[1, 1].plot(target_interferogram.array[0].real, label='real')
-    # axs[1, 1].set_title('Real Interferogram')
-    # axs[1, 2].plot(simulated_interferogram[0].real, label='synthetic')
-    # axs[1, 2].plot(target_interferogram.array[0].real, label='real')
-    # axs[1, 2].set_title('Synthetic vs Real Interferogram')
-    
-    # for ax in axs.flat:
-    #     ax.legend()
-    # plt.savefig("test_difference.png")
-    # plt.close()
+    simulated_interferogram = input_spectrum.spectral_simulation(model_function, target_interferogram, input_fid, 2, 0, 'ft1', ctrs, False, offsets=offsets, scaling_factors=scaling_factors)
 
     # Calculate the difference between the target and simulated interferograms
-    difference = np.sum((target_interferogram.array - simulated_interferogram) ** 2)
+    difference_equation = options.get('difference_equation', lambda target, simulated: np.sum((target - simulated) ** 2))
+    difference = difference_equation(target_interferogram.array, simulated_interferogram)
 
     return difference
     
 def interferogram_optimization(input_spectrum: Spectrum, model_function: ModelFunction, input_fid : pype.DataFrame,
-                               target_interferogram: pype.DataFrame, method: str = 'lsq', sim_params : tuple = (), 
-                               options: dict = {}) -> Spectrum:
+                               target_interferogram: pype.DataFrame, method: str = 'lsq', options: dict = {}, 
+                               **sim_params) -> Spectrum:
     """
     Optimize a Spectrum peak table to match the original interferogram data without window functions
 
@@ -626,16 +578,29 @@ def interferogram_optimization(input_spectrum: Spectrum, model_function: ModelFu
         Method of optimization, (lsq, basin, minimize, brute)
     trial_count : int
         Number of trials to run for optimization
-    sim_params : tuple
-        Spectral simulation function extra parameters
     options : dict
         Optimization parameters, by default {}
-        "trials" : number of trials to perform
-        "step" : step-size of optimization
-        "initDecay" : tuple of initial decay values for optimization in Hz
-        "dXBounds": tuple of lower and upper bounds for x-axis decay in Hz
-        "dYBounds": tuple of lower and upper bounds for y-axis decay in Hz
-        "aBounds": tuple of lower and upper bounds for decay
+        --------------------------------------
+        "trials" : int
+            number of trials to perform
+        "step" : float
+            step-size of optimization
+        "initDecay" : tuple[float, float]
+            tuple of initial decay values for optimization in Hz
+        "initPhase" : tuple[Phase, Phase]
+            tuple of initial phase values for optimiation in Hz
+        "dXBounds": tuple[float, float]
+            tuple of lower and upper bounds for x-axis decay in Hz
+        "dYBounds": tuple[float, float]
+            tuple of lower and upper bounds for y-axis decay in Hz
+        "aBounds": tuple[float, float]
+            tuple of lower and upper bounds for decay
+        "p0Bounds": tuple[float, float]
+            tuple of lower and upper bounds for phase P0 in degrees
+        "p1Bounds": 
+            tuple of lower and upper bounds for phase P0 in degrees
+    sim_params : dict
+        Spectral simulation function extra parameters
     Returns
     -------
     Spectrum
@@ -646,60 +611,87 @@ def interferogram_optimization(input_spectrum: Spectrum, model_function: ModelFu
     if method == '' or method not in OPT_METHODS:
         method = 'brute'
 
-    optimization_args = (input_spectrum, model_function, input_fid, target_interferogram, sim_params)
-
     # ----------------------------- Initial Settings ----------------------------- #
 
-    trial_count = options.get("trials", 100)
-    step_size = options.get("step", 0.1)
-    initial_decay = options.get("initDecay", (15, 5))
-    decay_bounds_x = options.get("dxBounds", (0, 100))
-    decay_bounds_y = options.get("dyBounds", (0, 20))
-    amplitude_bounds = options.get("aBounds", (0, 150))
+    trial_count : int = options.get("trials", 100)
+    step_size : float = options.get("step", 0.1)
+    initial_decay : tuple[float, float] = options.get("initDecay", (15, 5))
+    initial_phase : list[Phase, Phase] = list(options.get("initPhase", (Phase(0,0), Phase(0,0))))
+    decay_bounds_x : tuple[float, float] = options.get("dxBounds", (0, 100))
+    decay_bounds_y : tuple[float, float] = options.get("dyBounds", (0, 20))
+    amplitude_bounds : tuple[float, float] = options.get("aBounds", (0, 150))
+    p0_bounds : tuple[float, float] = options.get("p0Bounds", (-180, 180))
+    p1_bounds : tuple[float, float] = options.get("p1Bounds", (-180, 180))
 
+    # ---------------------------------------------------------------------------- #
+    #                               Checking Settings                              #
+    # ---------------------------------------------------------------------------- #
+
+    # ----------------------- Check Lower and Upper Bounds ----------------------- #
+    
     # Ensure that the second element of bounds is greater than the first element
-    for i, (low, high) in enumerate([decay_bounds_x, decay_bounds_y, amplitude_bounds]):
+    for i, (low, high) in enumerate([decay_bounds_x, decay_bounds_y, amplitude_bounds, p0_bounds, p1_bounds]):
         if high <= low:
-            bound_type = "decay"
-            match i:
-                case 1:
-                    bound_type = "x-decay bounds"
-                case 2:
-                    bound_type = "y-decay bounds"
-                case 2:
-                    bound_type = "amplitude"
+            bound_types = {
+                0: "x-decay bounds",
+                1: "y-decay bounds",
+                2: "amplitude bounds",
+                3: "p0 bounds",
+                4: "p1 bounds"
+            }
+            bound_type = bound_types.get(i, "decay")
             
             raise ValueError(f"Upper bound must be greater than lower bound for {bound_type} parameter: "
                              f"lower={low}, upper={high}")
+    
+    # --------------------------- Check Initial Values --------------------------- #
+
     # Ensure initial decay values are within bounds
     if not (decay_bounds_x[0] <= initial_decay[0] <= decay_bounds_x[1]):
-        print(f"Warning: Initial decay value for x-axis ({initial_decay[0]}) is out of bounds {decay_bounds_x}. Adjusting to midpoint.", file=sys.stderr)
+        errPrint(f"Warning: Initial decay value for x-axis ({initial_decay[0]}) is out of bounds {decay_bounds_x}. Adjusting to midpoint.")
         initial_decay = ((decay_bounds_x[0] + decay_bounds_x[1]) / 2, initial_decay[1])
     if not (decay_bounds_y[0] <= initial_decay[1] <= decay_bounds_y[1]):
-        print(f"Warning: Initial decay value for y-axis ({initial_decay[1]}) is out of bounds {decay_bounds_y}. Adjusting to midpoint.", file=sys.stderr)
+        errPrint(f"Warning: Initial decay value for y-axis ({initial_decay[1]}) is out of bounds {decay_bounds_y}. Adjusting to midpoint.")
         initial_decay = (initial_decay[0], (decay_bounds_y[0] + decay_bounds_y[1]) / 2)
     
+    # Ensure initial phase values are within bounds
+    for i, phase_value in enumerate(initial_phase):
+        if not (p0_bounds[0] <= phase_value.p0 <= p0_bounds[1]):
+            errPrint(f"Warning: Initial phase value for axis {i+1} P0 ({phase_value.p0}) is out of bounds {p0_bounds}. Adjusting to midpoint.")
+            initial_phase[i] = Phase((p0_bounds[0] + p0_bounds[1]) / 2, initial_phase[i].p1)
+        if not (p1_bounds[0] <= phase_value.p1 <= p1_bounds[1]):
+            errPrint(f"Warning: Initial phase value for axis {i+1} P1 ({phase_value.p1}) is out of bounds {p1_bounds}. Adjusting to midpoint.")
+            initial_phase[i] = Phase(initial_phase[i].p0, (p1_bounds[0] + p1_bounds[1]) / 2)
+
     # ------------------------------- Initial Guess ------------------------------ #
 
     # ----------------------------------- NOTE ----------------------------------- #
     # NOTE: Modify initial peak values and bounds later on, currently changed as needed
 
-    starting_x = (initial_decay[0]/input_spectrum._spectral_widths[0]) * input_spectrum._total_time_points[0]
+    spectral_widths = input_spectrum._spectral_widths
+    time_size_pts = input_spectrum._total_time_points
+    peak_count = len(input_spectrum.peaks)
 
-    starting_y = (initial_decay[1]/input_spectrum._spectral_widths[1]) * input_spectrum._total_time_points[1]
+    starting_x = (initial_decay[0]/spectral_widths[0]) * time_size_pts[0]
+
+    starting_y = (initial_decay[1]/spectral_widths[1]) * time_size_pts[1]
 
     # Initial parameter bounds
-    lower_bound_x = (decay_bounds_x[0]/input_spectrum._spectral_widths[0]) * input_spectrum._total_time_points[0]
+    lower_bound_x = (decay_bounds_x[0]/spectral_widths[0]) * time_size_pts[0]
     
-    upper_bound_x = (decay_bounds_x[1]/input_spectrum._spectral_widths[0]) * input_spectrum._total_time_points[0]
+    upper_bound_x = (decay_bounds_x[1]/spectral_widths[0]) * time_size_pts[0]
 
-    lower_bound_y = (decay_bounds_y[0]/input_spectrum._spectral_widths[1]) * input_spectrum._total_time_points[1]
+    lower_bound_y = (decay_bounds_y[0]/spectral_widths[1]) * time_size_pts[1]
     
-    upper_bound_y = (decay_bounds_y[1]/input_spectrum._spectral_widths[1]) * input_spectrum._total_time_points[1]
+    upper_bound_y = (decay_bounds_y[1]/spectral_widths[1]) * time_size_pts[1]
 
     # Collect initial parameters
-    initial_peak_lw_x = [starting_x] * len(input_spectrum.peaks) # Initial peak x linewidths
-    initial_peak_lw_y = [starting_y] * len(input_spectrum.peaks) # Initial peak y linewidths
+    initial_peak_lw_x = [starting_x] * peak_count # Initial peak x linewidths
+    initial_peak_lw_y = [starting_y] * peak_count # Initial peak y linewidths
+    initial_phase_x = ([initial_phase[0].p0] * peak_count) \
+                    + ([initial_phase[0].p1] * peak_count) # Initial x-axis p0 and p1 phase
+    initial_phase_y = ([initial_phase[1].p0] * peak_count) \
+                    + ([initial_phase[1].p1] * peak_count) # Initial y-axis p0 and p1 phase
     initial_peak_heights = [peak.intensity for peak in input_spectrum.peaks] # Initial peak heights
 
     # Find the largest and smallest peak heights in the initial guess
@@ -715,39 +707,74 @@ def interferogram_optimization(input_spectrum: Spectrum, model_function: ModelFu
     if method == 'lsq':
         # --------------------------- Least Squares Bounds --------------------------- #
 
-        bounds_lsq_low = ([lower_bound_x] * len(input_spectrum.peaks)) \
-                       + ([lower_bound_y] * len(input_spectrum.peaks)) \
-                       + ([amplitude_bounds[0]] * len(input_spectrum.peaks)) 
-        bounds_lsq_high = ([upper_bound_x] * len(input_spectrum.peaks)) \
-                       + ([upper_bound_y] * len(input_spectrum.peaks)) \
-                       + ([amplitude_bounds[1]] * len(input_spectrum.peaks)) 
+        # Collect lower bounds for x linewidth, y linewidth, lower amplitude, and lower p0 and p1 for both axes
+        bounds_lsq_low = ([lower_bound_x] * peak_count) \
+                       + ([lower_bound_y] * peak_count) \
+                       + ([amplitude_bounds[0]] * peak_count) \
+                       + ([p0_bounds[0]] * peak_count) \
+                       + ([p1_bounds[0]] * peak_count) \
+                       + ([p0_bounds[0]] * peak_count) \
+                       + ([p1_bounds[0]] * peak_count) 
+        
+        # Collect upper bounds for x linewidth, y linewidth, lower amplitude, and lower p0 and p1 for both axes
+        bounds_lsq_high = ([upper_bound_x] * peak_count) \
+                       + ([upper_bound_y] * peak_count) \
+                       + ([amplitude_bounds[1]] * peak_count) \
+                       + ([p0_bounds[1]] * peak_count) \
+                       + ([p1_bounds[1]] * peak_count) \
+                       + ([p0_bounds[1]] * peak_count) \
+                       + ([p1_bounds[1]] * peak_count) 
+        
         bounds = (bounds_lsq_low, bounds_lsq_high)
 
     else: 
         # ---------------------------------- Bounds ---------------------------------- #
 
-        x_axis_bounds = [(lower_bound_x, upper_bound_x)] * len(input_spectrum.peaks) # X-axis linewidth bounds
+        x_axis_bounds = [(lower_bound_x, upper_bound_x)] * peak_count # X-axis linewidth bounds
 
-        y_axis_bounds = [(lower_bound_y, upper_bound_y)] * len(input_spectrum.peaks) # Y-axis linewidth bounds
+        y_axis_bounds = [(lower_bound_y, upper_bound_y)] * peak_count # Y-axis linewidth bounds
 
-        intensity_bounds = [amplitude_bounds] * len(input_spectrum.peaks) # Peak height bounds (non-negative)
+        intensity_bounds = [amplitude_bounds] * peak_count # Peak height bounds (non-negative)
 
-        bounds = x_axis_bounds + y_axis_bounds + intensity_bounds
+        phase_p0_bounds = [p0_bounds] * peak_count # p0 bounds for x-axis and y-axis
+
+        phase_p1_bounds = [p1_bounds] * peak_count # p1 bounds for x-axis and y-axis
+
+        bounds = x_axis_bounds \
+               + y_axis_bounds \
+               + intensity_bounds \
+               + phase_p0_bounds \
+               + phase_p1_bounds \
+               + phase_p0_bounds \
+               + phase_p1_bounds \
+               
 
     # ----------------------------- Run Optimization ----------------------------- #
 
     if input_spectrum.verbose:
-        print("Original Parameters:", file=sys.stderr)
-        print(f"X Line-widths = {initial_peak_lw_x[0]}", file=sys.stderr)
-        print(f"Y Line-widths = {initial_peak_lw_y[0]:.3f}", file=sys.stderr)
-        print(f"Peak Heights = {initial_peak_heights[0]:.3f}", file=sys.stderr)
-        print("", file=sys.stderr)
+        errPrint("Original Parameters:")
+        errPrint(f"X Line-widths = {initial_peak_lw_x[0]}")
+        errPrint(f"Y Line-widths = {initial_peak_lw_y[0]:.3f}")
+        errPrint(f"Peak Heights = {initial_peak_heights[0]:.3f}")
+        errPrint(f"X Phase = {(initial_phase_x[0], initial_phase_x[peak_count])}")
+        errPrint(f"Y Phase = {(initial_phase_y[0], initial_phase_y[peak_count])}")
+        errPrint("")
 
-    initial_params = np.concatenate((initial_peak_lw_x, initial_peak_lw_y, initial_peak_heights))
+    initial_params = np.concatenate((
+        initial_peak_lw_x,
+        initial_peak_lw_y,
+        initial_peak_heights,
+        initial_phase_x, 
+        initial_phase_y
+        ))
 
+    
+    optimization_args = (input_spectrum, model_function, input_fid, target_interferogram, sim_params)
     if method == 'lsq':
         verbose = 2 if input_spectrum.verbose else 0
-        result = least_squares(objective_function_lsq, initial_params, '2-point',
+        sim_params["difference_equation"] = lambda target, simulated: (target - simulated).flatten()
+        optimization_args = (input_spectrum, model_function, input_fid, target_interferogram, sim_params)
+        result = least_squares(objective_function, initial_params, '2-point',
                             bounds, 'trf', args=optimization_args, verbose=verbose, max_nfev=trial_count)
     elif method == 'basin':
         disp = True if input_spectrum.verbose else False
@@ -770,17 +797,23 @@ def interferogram_optimization(input_spectrum: Spectrum, model_function: ModelFu
         optimized_params = result.x
 
     # optimized_params = x0
-    optimized_peak_lw_x = optimized_params[:len(input_spectrum.peaks)]
-    optimized_peak_lw_y = optimized_params[len(input_spectrum.peaks):2*len(input_spectrum.peaks)]
-    optimized_peak_heights = optimized_params[2*len(input_spectrum.peaks):]
-
+    optimized_peak_lw_x = optimized_params[:peak_count]
+    optimized_peak_lw_y = optimized_params[peak_count:2*peak_count]
+    optimized_peak_heights = optimized_params[2*peak_count:3*peak_count]
+    optimized_phase_x = (optimized_params[3*peak_count:4*peak_count], # X-axis p0 value
+                         optimized_params[4*peak_count:5*peak_count]) # X-axis p1 value
+    optimized_phase_y = (optimized_params[5*peak_count:6*peak_count], # Y-axis p0 value
+                         optimized_params[6*peak_count:])             # Y-axis p1 value
+    
     if input_spectrum.verbose:
-        print("", file=sys.stderr)
-        print("Optimized Parameters:", file=sys.stderr)
-        print(f"X Line-wdiths = {optimized_peak_lw_x}", file=sys.stderr)
-        print(f"Y Line-widths = {optimized_peak_lw_y}", file=sys.stderr)
-        print(f"Peak Heights = {optimized_peak_heights}", file=sys.stderr)
-        print("", file=sys.stderr)
+        errPrint("")
+        errPrint("Optimized Parameters:")
+        errPrint(f"X Line-widths = {optimized_peak_lw_x}")
+        errPrint(f"Y Line-widths = {optimized_peak_lw_y}")
+        errPrint(f"Peak Heights = {optimized_peak_heights}")
+        errPrint(f"X Phase = {optimized_phase_x}")
+        errPrint(f"Y Phase = {optimized_phase_y}")
+        errPrint("")
 
     # ------------------------------- New Spectrum ------------------------------- #
 
@@ -807,12 +840,17 @@ def interferogram_optimization(input_spectrum: Spectrum, model_function: ModelFu
 
         linewidths = Coordinate2D(input_spectrum.peaks[i].linewidths.index, 
                                   x_linewidth, y_linewidth)
+        
+        xPhase = Phase(optimized_phase_x[0][i], optimized_phase_x[1][i])
+        yPhase = Phase(optimized_phase_y[0][i], optimized_phase_y[1][i])
+
         optimized_peak = Peak(
             peak.position,
             float(optimized_peak_heights[i]),
             linewidths,
             extra_params=peak.extra_params
         )
+        optimized_peak.phase = [xPhase, yPhase]
         optimized_spectrum.peaks.append(optimized_peak)
     
     return input_spectrum

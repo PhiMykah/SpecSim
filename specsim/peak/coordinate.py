@@ -500,3 +500,106 @@ class Coordinate2D():
             self._y = value
         else:
             raise IndexError("Index out of range. Valid indices are 0 and 1.")
+        
+# ---------------------------------------------------------------------------- #
+#                                    Phase                                     #
+# ---------------------------------------------------------------------------- #
+
+class Phase():
+    """
+    A class to represent the phase correction parameters.
+
+    Attributes
+    ----------
+    _p0 : float
+        The zero-order phase correction in degrees
+    
+    _p1 : float
+        The first-order phase correction in degrees
+    """
+    def __init__(self, p0: float = 0.0, p1: float = 0.0):
+        """
+        Initialize the phase correction parameters.
+
+        Parameters
+        ----------
+        p0 : float
+            The zero-order phase correction in degrees
+        p1 : float
+            The first-order phase correction in degrees
+        """
+        self._p0 = p0
+        self._p1 = p1
+
+    # ----------------------------------- p0 ----------------------------------- #
+
+    @property
+    def p0(self):
+        """
+        Returns the zero-order phase correction.
+
+        Returns
+        -------
+        float
+            The zero-order phase correction in degrees
+        """
+        return self._p0
+    
+    @p0.setter
+    def p0(self, new_value):
+        """
+        Sets the zero-order phase correction.
+
+        Parameters
+        ----------
+        new_value : float
+            The new zero-order phase correction in degrees
+        """
+        self._p0 = new_value
+
+    # ----------------------------------- p1 ----------------------------------- #
+
+    @property
+    def p1(self):
+        """
+        Returns the first-order phase correction.
+
+        Returns
+        -------
+        float
+            The first-order phase correction in degrees
+        """
+        return self._p1
+    
+    @p1.setter
+    def p1(self, new_value):
+        """
+        Sets the first-order phase correction.
+
+        Parameters
+        ----------
+        new_value : float
+            The new first-order phase correction in degrees
+        """
+        self._p1 = new_value
+
+    # ------------------------------ Magic Methods ----------------------------- #
+
+    def __getitem__(self, key):
+        if key == 0:
+            return self._p0
+        elif key == 1:
+            return self._p1
+        else:
+            raise IndexError("Index out of range. Valid indices are 0 and 1.")
+
+    def __setitem__(self, key, value):
+        if key == 0:
+            self._p0 = value
+        elif key == 1:
+            self._p1 = value
+        else:
+            raise IndexError("Index out of range. Valid indices are 0 and 1.")
+        
+    def __repr__(self):
+        return f"Phase(p0={self.p0:.4f}, p1={self.p1:.4f})"

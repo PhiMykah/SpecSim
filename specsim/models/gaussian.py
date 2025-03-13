@@ -1,6 +1,6 @@
 import numpy as np
 from ..calculations import calculate_decay, calculate_couplings
-from ..peak import Coordinate
+from ..peak import Coordinate, Phase
 
 def sim_gaussian_1D(
         time_domain_size : int,
@@ -11,7 +11,7 @@ def sim_gaussian_1D(
         cos_mod_values : np.ndarray | None = None, 
         sin_mod_values : np.ndarray | None = None, 
         amplitude : float = 0.0,
-        phase : tuple[float, float] = (0.0, 0.0),
+        phase : Phase = Phase(0.0, 0.0),
         scale : float = 1.0
         ) -> np.ndarray:
     """
@@ -35,7 +35,7 @@ def sim_gaussian_1D(
         Sine modulation frequencies (if any)
     amplitude : float
         Maximum amplitude of the signal
-    phase : tuple[float, float]
+    phase : Phase
         Phase p0 and p1 of the signal
     scale : float
         Amplitude scaling factor, Default 1

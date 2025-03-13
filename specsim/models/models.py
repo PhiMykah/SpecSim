@@ -1,5 +1,6 @@
 from .exponential import sim_exponential_1D
 from .gaussian import sim_gaussian_1D
+from ..debug.verbose import errPrint
 
 from enum import Enum
 import sys
@@ -31,7 +32,7 @@ class Model(Enum):
         elif label in ("gaus", "gauss", "gaussian"):
             return cls.GAUSSIAN
         else:
-            print(f"Warning: {label} is not a valid model, using exponential", file=sys.stderr)
+            errPrint(f"Warning: {label} is not a valid model, using exponential")
             return cls.EXPONENTIAL
     
     @classmethod
@@ -42,5 +43,5 @@ class Model(Enum):
                                ) or filename.endswith("gauss"):
             return cls.GAUSSIAN
         else:
-            print(f"Warning: Filename \'{filename}\' does not contain a valid model, using exponential", file=sys.stderr)
+            errPrint(f"Warning: Filename '{filename}' does not contain a valid model, using exponential")
             return cls.EXPONENTIAL
