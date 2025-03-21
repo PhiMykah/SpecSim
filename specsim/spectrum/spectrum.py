@@ -814,6 +814,14 @@ def interferogram_optimization(input_spectrum: Spectrum, model_function: ModelFu
         errPrint(f"X Phase = {optimized_phase_x}")
         errPrint(f"Y Phase = {optimized_phase_y}")
         errPrint("")
+        
+    # Save optimized parameters to a text file with comma separated values
+    with open("optimized_parameters.csv", "w") as file:
+        file.write("X Line-widths,Y Line-widths,Peak Heights,X Phase P0,X Phase P1,Y Phase P0,Y Phase P1\n")
+        for i in range(peak_count):
+            file.write(f"{optimized_peak_lw_x[i]},{optimized_peak_lw_y[i]},{optimized_peak_heights[i]},"
+                       f"{optimized_phase_x[0][i]},{optimized_phase_x[1][i]},"
+                       f"{optimized_phase_y[0][i]},{optimized_phase_y[1][i]}\n")
 
     # ------------------------------- New Spectrum ------------------------------- #
 
@@ -853,7 +861,7 @@ def interferogram_optimization(input_spectrum: Spectrum, model_function: ModelFu
         optimized_peak.phase = [xPhase, yPhase]
         optimized_spectrum.peaks.append(optimized_peak)
     
-    return input_spectrum
+    return optimized_spectrum
 
 # ---------------------------------------------------------------------------- #
 #                               Helper Functions                               #
