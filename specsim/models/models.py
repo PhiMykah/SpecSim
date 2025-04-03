@@ -1,5 +1,6 @@
 from .exponential import sim_exponential_1D
 from .gaussian import sim_gaussian_1D
+from .composite import sim_composite_1D
 from ..debug.verbose import errPrint
 
 from enum import Enum
@@ -15,6 +16,7 @@ class Model(Enum):
     """
     EXPONENTIAL = 0, "exp", sim_exponential_1D
     GAUSSIAN = 1, "gauss", sim_gaussian_1D
+    COMPOSITE = 2, "comp", sim_composite_1D
 
     def __str__(self):
         return self.value[1]
@@ -31,6 +33,8 @@ class Model(Enum):
             return cls.EXPONENTIAL
         elif label in ("gaus", "gauss", "gaussian"):
             return cls.GAUSSIAN
+        elif label in ("comp", "compos", "composite"):
+            return cls.COMPOSITE
         else:
             errPrint(f"Warning: {label} is not a valid model, using exponential")
             return cls.EXPONENTIAL
@@ -39,9 +43,10 @@ class Model(Enum):
     def from_filename(cls, filename : str):
         if filename.endswith("exp") or filename.endswith("ex"):
             return cls.EXPONENTIAL
-        elif filename.endswith("gaus"
-                               ) or filename.endswith("gauss"):
+        elif filename.endswith("gaus") or filename.endswith("gauss"):
             return cls.GAUSSIAN
+        elif filename.endswith("comp") or filename.endswith("composite"):
+            return cls.COMPOSITE
         else:
             errPrint(f"Warning: Filename '{filename}' does not contain a valid model, using exponential")
             return cls.EXPONENTIAL

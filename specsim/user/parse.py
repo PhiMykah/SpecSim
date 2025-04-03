@@ -23,8 +23,8 @@ def parse_command_line(argument_list : str) -> argparse.Namespace:
     parser.add_argument('-noverb', "-noverbose", action='store_true', help='Verbose Mode OFF.') #
     parser.add_argument('-report', action='store_true', help='Report Mode ON.')
     parser.add_argument('-freq', type=float, nargs='+', default=None, help='Frequency Positions (list of floats).')
-    parser.add_argument('-initXDecay', '-initDecay', type=float, default=2.0, help='Initial x-axis decay value in Hz.')
-    parser.add_argument('-initYDecay', type=float, default=0.0, help='Initial y-axis decay value in Hz.')
+    parser.add_argument('-initXDecay', '-initDecay', type=float, nargs='+', default=[2.0], help='Initial x-axis decay values in Hz (list of floats, one for each model).')
+    parser.add_argument('-initYDecay', type=float, nargs='+', default=[0.0], help='Initial y-axis decay values in Hz (list of floats, one for each model).')
     parser.add_argument('-xDecayBounds', type=float, nargs=2, default=[0.0, 100.0], metavar=('LOWER', 'HIGHER'), help='Lower and upper bounds for x-decay in Hz.')
     parser.add_argument('-yDecayBounds', type=float, nargs=2, default=[0.0, 20.0], metavar=('LOWER', 'HIGHER'), help='Lower and upper bounds for y-decay in Hz.')
     parser.add_argument('-ampBounds', type=float, nargs=2, default=[0.0, 10.0], metavar=('LOWER', 'HIGHER'), help='Lower and upper bounds for amplitude.')
@@ -39,10 +39,10 @@ def parse_command_line(argument_list : str) -> argparse.Namespace:
     parser.add_argument('-j1', type=str, default=None, help='Coupling 1 (Cosine Modulation, Pts Hz ppm %%).')
     parser.add_argument('-j2', type=str, default=None, help='Coupling 2 (Cosine Modulation, Pts Hz ppm %%).')
     parser.add_argument('-j3', type=str, default=None, help='Coupling 3 (Cosine Modulation, Pts Hz ppm %%).')
-    parser.add_argument('-xP0', type=float, default=0.0, help='Zero Order Phase of All Signals for x-axis.') #
-    parser.add_argument('-xP1', type=float, default=0.0, help='First Order Phase of All Signals for x-axis.') #
-    parser.add_argument('-yP0', type=float, default=0.0, help='Zero Order Phase of All Signals for y-axis.') #
-    parser.add_argument('-yP1', type=float, default=0.0, help='First Order Phase of All Signals for y-axis.') #
+    parser.add_argument('-xP0', type=float, nargs='+', default=[0.0], help='Zero Order Phase of All Signals for x-axis (list of floats, one for each model).') #
+    parser.add_argument('-xP1', type=float, nargs='+', default=[0.0], help='First Order Phase of All Signals for x-axis (list of floats, one for each model).') #
+    parser.add_argument('-yP0', type=float, nargs='+', default=[0.0], help='Zero Order Phase of All Signals for y-axis (list of floats, one for each model).') #
+    parser.add_argument('-yP1', type=float, nargs='+', default=[0.0], help='First Order Phase of All Signals for y-axis (list of floats, one for each model).') #
     parser.add_argument('-ePhase', type=float, default=0.0, help='Additional Phase for Each Exponential Signal.')
     parser.add_argument('-gPhase', type=float, default=0.0, help='Additional Phase for Each Gaussian Signal.')
     parser.add_argument('-ts', action='store_true', help='Scale Time-Domain Signal by Decay Integral.')
@@ -132,9 +132,9 @@ class SpecSimArgs:
     freq : float
         Frequency of the simulation.
     initXDecay : float
-        Initial x-axis decay value in Hz.
+        Initial x-axis decay value in Hz for each model.
     initYDecay : float
-        Initial y-axis decay value in Hz.
+        Initial y-axis decay value in Hz for each model.
     xDecayLB : float
         Lower bound for decay in Hz.
     xDecayUB : float
@@ -165,14 +165,14 @@ class SpecSimArgs:
         Second J-coupling constant.
     j3 : float
         Third J-coupling constant.
-    xP0 : float
-        Zero-order phase correction for x-axis.
-    xP1 : float
-        First-order phase correction for x-axis.
-    yP0 : float
-        Zero-order phase correction for y-axis.
-    yP1 : float
-        First-order phase correction for y-axis.
+    xP0 : list[float]
+        Zero-order phase correction for x-axis for each model.
+    xP1 : list[float]
+        First-order phase correction for x-axis for each model.
+    yP0 : list[float]
+        Zero-order phase correction for y-axis for each model.
+    yP1 : list[float]
+        First-order phase correction for y-axis for each model.
     ePhase : float
         Exponential phase correction.
     gPhase : float
@@ -209,8 +209,8 @@ class SpecSimArgs:
         self.noverb: bool = args.noverb
         self.report: bool = args.report
         self.freq: list[float] = args.freq
-        self.initXDecay : float = args.initXDecay
-        self.initYDecay : float = args.initYDecay
+        self.initXDecay : list[float] = args.initXDecay
+        self.initYDecay : list[float] = args.initYDecay
         self.xDecayBounds: list[float] = args.xDecayBounds
         self.yDecayBounds: list[float] = args.yDecayBounds
         self.ampBounds: list[float] = args.ampBounds
@@ -225,10 +225,10 @@ class SpecSimArgs:
         self.j1: str = args.j1
         self.j2: str = args.j2
         self.j3: str = args.j3
-        self.xP0: float = args.xP0
-        self.xP1: float = args.xP1
-        self.yP0: float = args.yP0
-        self.yP1: float = args.yP1
+        self.xP0: list[float] = args.xP0
+        self.xP1: list[float] = args.xP1
+        self.yP0: list[float] = args.yP0
+        self.yP1: list[float] = args.yP1
         self.ePhase: float = args.ePhase
         self.gPhase: float = args.gPhase
         self.ts: bool = args.ts

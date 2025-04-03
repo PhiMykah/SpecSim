@@ -2,6 +2,7 @@ import numpy as np
 from .coordinate import Coordinate
 from .coordinate import Coordinate2D
 from .coordinate import Phase
+
 class Peak():
     """
     A class to represent a peak based on coordinates and other information.
@@ -9,7 +10,6 @@ class Peak():
 
     Attributes
     ----------
-
     position : Coordinate2D
         Coordinates of peak with coordinate data
     intensity : float
@@ -18,17 +18,32 @@ class Peak():
         Linewidth of the peak dimensions in Pts
     extra_params : dict[str, float]
         Extra parameter values to define the peak feature
+    exp_linewidths : Coordinate2D
+        Exponential linewidths for the peak dimensions
+    gauss_linewidths : Coordinate2D
+        Gaussian linewidths for the peak dimensions
+    phase_exp : Phase
+        Phase for the exponential decay
+    phase_gauss : Phase
+        Phase for the Gaussian decay
+    gauss_weight : float
+        Weight of the Gaussian component in the composite signal
     """
-    def __init__(self, position : Coordinate2D, intensity : float, linewidths : Coordinate2D, extra_params = {}):
+    def __init__(self, position: Coordinate2D, intensity: float, linewidths: Coordinate2D, **extra_params):
         self.position = position
         self.intensity = intensity
         self.linewidths = linewidths
-        self.extra_params = extra_params
+        self.extra_params = extra_params if extra_params else {}
+        self.exp_linewidths : Coordinate2D = extra_params.get("exp_linewidths", linewidths)
+        self.gauss_linewidths : Coordinate2D = extra_params.get("gauss_linewidths", linewidths)
+        self.phase_exp = extra_params.get("phase_exp", [Phase(),Phase()])
+        self.phase_gauss = extra_params.get("phase_gauss", [Phase(),Phase()])
+        self.gauss_weights = extra_params.get("gauss_weight", [1.0, 1.0])
         self._xPhase = Phase()
         self._yPhase = Phase()
         self._phase = [self._xPhase, self._yPhase]
         pass
-    
+
     @property
     def phase(self):
         return self._phase
@@ -36,11 +51,11 @@ class Peak():
     @property
     def xPhase(self):
         return self._xPhase
-    
+
     @property
     def yPhase(self):
         return self._yPhase
-    
+
     @phase.setter
     def phase(self, value):
         if not isinstance(value, list) or len(value) != 2 or not all(isinstance(i, Phase) for i in value):
@@ -48,7 +63,7 @@ class Peak():
         self._phase = value
         self._xPhase = value[0]
         self._yPhase = value[1]
-        
+
     @xPhase.setter
     def xPhase(self, value):
         if isinstance(value, Phase):
@@ -72,4 +87,7 @@ class Peak():
             self._phase[1] = self._yPhase
 
     def __repr__(self):
-        return f"Peak(position={self.position}, intensity={self.intensity}, width={self.linewidths}, extra_params={self.extra_params}, phase={self._phase})"
+        return (f"Peak(position={self.position}, intensity={self.intensity}, width={self.linewidths}, "
+                f"extra_params={self.extra_params}, exp_linewidths={self.exp_linewidths}, "
+                f"gauss_linewidths={self.gauss_linewidths}, phase_exp={self.phase_exp}, "
+                f"phase_gauss={self.phase_gauss}, gauss_weight={self.gauss_weight}, phase={self._phase})")

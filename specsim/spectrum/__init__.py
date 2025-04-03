@@ -1,2 +1,2 @@
 from .spectrum import Spectrum
-from .spectrum import interferogram_optimization
+from .spectrum import interferogram_optimization, composite_interferogram_optimization
