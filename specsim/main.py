@@ -223,8 +223,11 @@ def main() -> int:
     # Save gaussian decay data using existing dataframe as base
     optimized_output.setArray(new_spectrum_data)
 
-    output_file_path = str(Path(output_file).with_suffix('')) + "_optimized" + f"_{str(simulation_model)}" + f".{domain}"
-    pype.write_to_file(optimized_output, output_file_path, True)
+    if str(simulation_model).lower() not in Path(output_file).stem.lower():
+        output_file_path = str(Path(output_file).with_suffix('')) + f"_{str(simulation_model)}" + "_optimized" + f".{domain}"
+    else:
+        output_file_path = str(Path(output_file).with_suffix('')) + "_optimized" +  f".{domain}"
+        
     
 
 # ---------------------------------------------------------------------------- #
