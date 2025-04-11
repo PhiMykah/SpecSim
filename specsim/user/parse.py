@@ -11,6 +11,7 @@ def parse_command_line(argument_list : str) -> argparse.Namespace:
     parser.add_argument('-ft2', type=str, default='test.ft2', help='Corresponding NMRPipe-format Freq-Domain Input.') #
     parser.add_argument('-apod', type=str, default=None, help='Optional NMRPipe-format Apodization Profile.')
     parser.add_argument('-out', type=str, default=None, help='NMRPipe-format Time-Domain Output, or Keyword None.') #
+    parser.add_argument('-basis', type=str, default=None, metavar='FILEPATH', help='Save Each Peak in a Basis Set, Designate the Folder Path.')
     parser.add_argument('-res', type=str, default=None, help='NMRPipe-format Time-Domain Residual, or Keyword None.')
     parser.add_argument('-scale', type=float, default=1.0, help="Amplitude Scaling Factor") #
     parser.add_argument('-rx1', type=int, default=0, help='First Point Location for Calculating Residual.')
@@ -109,6 +110,8 @@ class SpecSimArgs:
         Apodization function to be applied.
     out : str
         Output file path.
+    basis : str
+        Save Each Peak in a Basis Set, Designate the Folder Path.
     res : float
         Resolution of the simulation.
     scale : float
@@ -197,6 +200,7 @@ class SpecSimArgs:
         self.ft2: str = args.ft2
         self.apod: str = args.apod
         self.out: str = args.out
+        self.basis: str = args.basis
         self.res: str = args.res
         self.scale: float = args.scale
         self.rx1: int = args.rx1

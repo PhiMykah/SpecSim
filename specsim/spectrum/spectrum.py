@@ -499,7 +499,116 @@ class Spectrum:
             amplitude, self.peaks[index].phase_exp[axis], self.peaks[index].phase_gauss[axis],
             self.peaks[index].gauss_weights[axis], scaling_factor
             ))
+    
+    def create_basis_set(self, folder_name : str, fid: pype.DataFrame, interferogram : pype.DataFrame, spectrum_df : pype.DataFrame, 
+                         model_function, offsets : list[float], scaling_factors : list[float], domain : str = 'ft1'):
+        simulations = []
+        axis_count = 2
+        for axis in range(axis_count):
+            if model_function == sim_composite_1D:
+                sim_1D_peaks = self.composite_simulation1D(model_function, 0, axis, 0, False, 
+                                                           offset=offsets[axis], scaling_factor=scaling_factors[axis])
+            else:
+                sim_1D_peaks = self.spectral_simulation1D(model_function, 0, axis, 0, False, 
+                                                          offset=offsets[axis], scaling_factor=scaling_factors[axis])
+            simulations.append(sim_1D_peaks)
+        pass
+
+        # Collect all the axis peaks
+        spectral_data : list[list[np.ndarray]] = [*simulations]
+
+        process_iterations = 0
+        if domain == 'ft1' and axis_count >= 2:
+            process_iterations = 1
+        if domain == 'ft2' and axis_count >= 2:
+            process_iterations = 2
+
+        # Iterate through all dimensions in need of processing
+        for i in range(process_iterations):
+            spectral_data[i] = []
+            # Go through all peaks in simulation
+            for j in range(len(simulations[i])):
+                iteration_df = pype.DataFrame(file=fid.file, header=fid.header, array=fid.array)
+                iteration_df.array = simulations[i][j]
+                dim = i + 1
+
+                #  Add first point scaling and window function if necessary
+                off_param = spectrum_df.getParam("NDAPODQ1", dim)
+                end_param = spectrum_df.getParam("NDAPODQ2", dim)
+                pow_param = spectrum_df.getParam("NDAPODQ3", dim)
+                elb_param = spectrum_df.getParam("NDLB", dim)
+                glb_param = spectrum_df.getParam("NDGB", dim)
+                goff_param = spectrum_df.getParam("NDGOFF", dim)
+                first_point_scale = 1 + spectrum_df.getParam("NDC1", dim)
+
+                iteration_df.runFunc("SP", {"sp_off":off_param, "sp_end":end_param, "sp_pow":pow_param, "sp_elb":elb_param,
+                                            "sp_glb":glb_param, "sp_goff":goff_param, "sp_c":first_point_scale})
+                # Zero fill if necessary
+                iteration_df.runFunc("ZF", {"zf_count":1, 'zf_auto':True})
+
+                # Convert to frequency domain
+                iteration_df.runFunc("FT")
+                
+                # Perform phase correction
+                if model_function == sim_composite_1D: 
+                    iteration_df.runFunc("PS", {"ps_p0":self.peaks[j].phase[i][0], "ps_p1":self.peaks[j].phase[i][1]})
+                else:
+                    iteration_df.runFunc("PS", {"ps_p0":self.peaks[j].phase[i][0], "ps_p1":self.peaks[j].phase[i][1]})
+
+                # Delete imaginary values
+                # simulations[i] = simulations[i].real
+                iteration_df.runFunc("DI")
+                
+                # Extract designated region if necessary
+                first_point = int(spectrum_df.getParam("NDX1", dim))
+                last_point = int(spectrum_df.getParam("NDXN", dim))
+                if first_point and last_point:
+                    iteration_df.array = extract_region(iteration_df.array, first_point, last_point)
+
+                # Add peak to list
+                spectral_data[i].append(iteration_df.array)
         
+        x_axis = spectral_data[0]
+        y_axis = spectral_data[1]    
+        y_length = y_axis.shape[-1]
+
+        if np.iscomplexobj(y_axis):
+            interleaved_data = np.zeros(y_axis.shape[:-1] + (y_length * 2,), dtype=y_axis.real.dtype)
+            for i in range(len(interleaved_data)):
+                interleaved_data[i][0::2] = y_axis[i].real
+                interleaved_data[i][1::2] = y_axis[i].imag
+
+            y_axis = interleaved_data
+            y_length = y_length * 2
+
+        # Create the x-axis y-axis pairings
+        planes = []
+        peak_count = len(self.peaks)
+
+        for i in range(peak_count):
+            plane = np.outer(y_axis[i], x_axis[i])
+            if domain == 'ft2':
+                iteration_df = pype.DataFrame(file=spectrum_df.file, header=spectrum_df.header, array=plane)
+            elif domain == 'fid':
+                iteration_df = pype.DataFrame(file=fid.file, header=fid.header, array=plane)
+            else:
+                iteration_df = pype.DataFrame(file=interferogram.file, header=interferogram.header, array=plane)
+            
+            iteration_df.setArray(plane)
+            # Ensure output directory exists
+            output_dir = Path(folder_name)
+            output_dir.mkdir(parents=True, exist_ok=True)
+
+            # Save the plane to a file
+            max_digits = len(str(peak_count))
+            output_file = output_dir / f"{i + 1:0{max_digits}}.{domain}"
+
+            pype.write_to_file(iteration_df, str(output_file) , True)
+            planes.append(plane)
+
+        # Optionally, return or store the pairings for further use
+        print("Done!")
+
     # ---------------------------------------------------------------------------- #
     #                              Peak Table Reading                              #
     # ---------------------------------------------------------------------------- #
@@ -624,69 +733,6 @@ class Spectrum:
                f"total_time_points={self._total_time_points}, " \
                f"total_freq_points={self._total_freq_points}, " \
                f"verbose={self.verbose})"
-
-# ---------------------------------------------------------------------------- #
-#                                 Optimization                                 #
-# ---------------------------------------------------------------------------- #
-
-def objective_function(params, input_spectrum : Spectrum, model_function : ModelFunction, input_fid : pype.DataFrame, target_interferogram : pype.DataFrame, options : dict = {}) -> np.float32:
-    """
-    Function used for optimizing peak linewidths and heights of spectrum
-
-    Parameters
-    ----------
-    params : list
-        List of target parameters being tested (peak indices, peak linewidths, peak heights)
-    input_spectrum : Spectrum
-        Input spectrum to generate from 
-    model_function : ModelFunction
-        Spectral modeling method function (e.g. exponential, gaussian)
-    input_fid : nmrPype.DataFrame
-        Corresponding fid dataframe to perform functions
-    target_interferogram : nmrPype.DataFrame
-        Corresponding nmrPype dataframe matching header content
-    options : dict
-        "difference_equation" : 
-        "offsets" : list[int]
-        "constant_time_region_sizes" : list[int]
-        "scaling_factors" : list[float]
-    Returns
-    -------
-    np.float32
-        Difference between simulated data and real data
-    """
-
-    peak_count = len(input_spectrum.peaks)
-
-    # Unpack parameters
-    peak_x_lws = params[:peak_count] # X-axis peak linewidths
-    peak_y_lws = params[peak_count:2*peak_count] # Y-axis peak linewidths
-    peak_heights = params[2*peak_count:3*peak_count] # Peak heights
-    phase_x = (params[3*peak_count:4*peak_count], # X-axis p0 value
-               params[4*peak_count:5*peak_count]) # X-axis p1 value
-    phase_y = (params[5*peak_count:6*peak_count], # Y-axis p0 value
-               params[6*peak_count:])             # Y-axis p1 value
-
-    # Update peaks with the current parameters
-    for i, peak in enumerate(input_spectrum.peaks):
-        peak.linewidths.x.pts = peak_x_lws[i]
-        peak.linewidths.y.pts = peak_y_lws[i]
-        peak.intensity = peak_heights[i]
-        xPhase = Phase(phase_x[0][i], phase_x[1][i])
-        yPhase = Phase(phase_y[0][i], phase_y[1][i])
-        peak.phase = [xPhase, yPhase]
-
-    ctrs = options.get("constant_time_region_sizes", [0,0] )
-    offsets = options.get("offsets", [0,0])
-    scaling_factors = options.get("scaling_factors", [1.0, 1.0])
-    # Generate the simulated interferogram
-    simulated_interferogram = input_spectrum.spectral_simulation(model_function, target_interferogram, input_fid, 2, 0, 'ft1', ctrs, False, offsets=offsets, scaling_factors=scaling_factors)
-
-    # Calculate the difference between the target and simulated interferograms
-    difference_equation = options.get('difference_equation', lambda target, simulated: np.sum((target - simulated) ** 2))
-    difference = difference_equation(target_interferogram.array, simulated_interferogram)
-
-    return difference
 
 # ---------------------------------------------------------------------------- #
 #                               Helper Functions                               #

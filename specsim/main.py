@@ -227,6 +227,10 @@ def main() -> int:
         output_file_path = str(Path(output_file).with_suffix('')) + f"_{str(simulation_model)}" + "_optimized" + f".{domain}"
     else:
         output_file_path = str(Path(output_file).with_suffix('')) + "_optimized" +  f".{domain}"
+
+    if command_arguments.basis:
+        new_spectrum.create_basis_set(command_arguments.basis, target_data_fid, target_data, 
+                                      data_frame, model_function, offsets, scaling_factors, domain)
         
     
 
