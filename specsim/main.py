@@ -2,6 +2,7 @@ import sys
 from itertools import zip_longest
 from pathlib import Path
 import nmrPype as pype
+from numpy import iscomplexobj
 
 # Command-line parsing  
 from specsim import parse_command_line, SpecSimArgs, get_dimension_info, get_total_size
@@ -220,6 +221,12 @@ def main() -> int:
                                                              peak_count, domain, constant_time_region_sizes, False,
                                                              offsets=offsets, scaling_factors=scaling_factors)
     
+    # Convert new spectrum data to float32, supporting both real and imaginary parts
+    if iscomplexobj(new_spectrum_data):
+        new_spectrum_data = new_spectrum_data.astype('complex64')  # 32-bit real and imaginary
+    else:
+        new_spectrum_data = new_spectrum_data.astype('float32')  # 32-bit real only
+    
     # Save gaussian decay data using existing dataframe as base
     optimized_output.setArray(new_spectrum_data)
 
@@ -231,8 +238,8 @@ def main() -> int:
     if command_arguments.basis:
         new_spectrum.create_basis_set(command_arguments.basis, target_data_fid, target_data, 
                                       data_frame, model_function, offsets, scaling_factors, domain)
-        
     
+    pype.write_to_file(optimized_output, output_file_path, True)
 
 # ---------------------------------------------------------------------------- #
 #                                  Entry Point                                 #

@@ -90,4 +90,4 @@ class Peak():
         return (f"Peak(position={self.position}, intensity={self.intensity}, width={self.linewidths}, "
                 f"extra_params={self.extra_params}, exp_linewidths={self.exp_linewidths}, "
                 f"gauss_linewidths={self.gauss_linewidths}, phase_exp={self.phase_exp}, "
-                f"phase_gauss={self.phase_gauss}, gauss_weight={self.gauss_weight}, phase={self._phase})")
+                f"phase_gauss={self.phase_gauss}, gauss_weight={self.gauss_weights}, phase={self._phase})")

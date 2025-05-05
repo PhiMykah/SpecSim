@@ -161,7 +161,7 @@ class Spectrum:
                 sim_1D_peaks = self.spectral_simulation1D(model_function, peaks_simulated, axis,
                                             constant_time_region_sizes[axis],
                                             set_phase_values,
-                                            phase_values[0][axis],
+                                            phase_values[axis],
                                             offsets[axis],
                                             scaling_factors[axis])
             simulations.append(sim_1D_peaks)
@@ -203,7 +203,14 @@ class Spectrum:
                 iteration_df.runFunc("FT")
                 
                 # Perform phase correction
-                iteration_df.runFunc("PS", {"ps_p0":spec_sim_phase_values[i][0], "ps_p1":spec_sim_phase_values[i][1]})
+                if model_function == sim_composite_1D:
+                    iteration_df.runFunc("PS", {"ps_p0":np.float32(spec_sim_phase_values[i][0]), "ps_p1":np.float32(spec_sim_phase_values[i][1])})
+                else:
+                    if isinstance(spec_sim_phase_values[i], list) and len(spec_sim_phase_values[i]) == 1:
+                        ps = spec_sim_phase_values[i][0]
+                    else:
+                        ps = spec_sim_phase_values[i]
+                    iteration_df.runFunc("PS", {"ps_p0":np.float32(ps[0]), "ps_p1":np.float32(ps[1])})
 
                 # Delete imaginary values
                 # simulations[i] = simulations[i].real
@@ -220,7 +227,7 @@ class Spectrum:
 
         if axis_count == 2:
             result = outer_product_summation(spectral_data[0], spectral_data[1])
-
+    
             # // Debug
             # time_end = time.time()
             # peak_count = (len(peaks_simulated) if isinstance(peaks_simulated, list) 
@@ -344,6 +351,9 @@ class Spectrum:
 
         if axis not in [X, Y]:
             TypeError("Incorrect Axis Type for Simulation, please enter a supported axis type.")
+
+        if isinstance(phase, list) and len(phase) == 1:
+            phase = phase[0]
 
         if set_phase_value:
             if axis == X:
@@ -594,6 +604,12 @@ class Spectrum:
             else:
                 iteration_df = pype.DataFrame(file=interferogram.file, header=interferogram.header, array=plane)
             
+            # Set plane datatype to float32 if float64 and complex64 if complex128
+            if plane.dtype == np.float64:
+                plane = plane.astype(np.float32)
+            elif plane.dtype == np.complex128:
+                plane = plane.astype(np.complex64)
+
             iteration_df.setArray(plane)
             # Ensure output directory exists
             output_dir = Path(folder_name)
@@ -605,9 +621,6 @@ class Spectrum:
 
             pype.write_to_file(iteration_df, str(output_file) , True)
             planes.append(plane)
-
-        # Optionally, return or store the pairings for further use
-        print("Done!")
 
     # ---------------------------------------------------------------------------- #
     #                              Peak Table Reading                              #
@@ -671,6 +684,9 @@ class Spectrum:
                 del file_lines[0]
             elif line.upper().startswith("NULLSTRING"):
                 self._null_string = re.sub("NULLSTRING( )+", "", line, flags=re.IGNORECASE)
+                del file_lines[0]
+            elif line.upper().startswith("DATA"):
+                self.remarks += re.sub("(DATA|#)( )+", "", line, flags=re.IGNORECASE) + "\n"
                 del file_lines[0]
             elif line.upper().startswith("NULLVALUE"):
                 self._null_value = int(re.sub("NULLVALUE( )+", "", line, re.IGNORECASE))

@@ -163,6 +163,13 @@ def composite_interferogram_optimization(input_spectrum: Spectrum, composite_fun
     if max_peak_height > amplitude_bounds[1]:
         amplitude_bounds = (amplitude_bounds[0], max_peak_height * 2 if max_peak_height > 0 else max_peak_height / 2)
 
+    # ------------------------- Gaussian Weight Parameter ------------------------ #
+
+    weight = 1.0
+    initial_gauss_weight_x = [weight] * peak_count
+    initial_gauss_weight_y = [weight] * peak_count
+    weight_bounds = (0.0, 1.0)
+
     if method == 'lsq':
         # --------------------------- Least Squares Bounds --------------------------- #
 
@@ -173,7 +180,8 @@ def composite_interferogram_optimization(input_spectrum: Spectrum, composite_fun
                        + ([p0_bounds[0]] * peak_count * composite_count) \
                        + ([p1_bounds[0]] * peak_count * composite_count) \
                        + ([p0_bounds[0]] * peak_count * composite_count) \
-                       + ([p1_bounds[0]] * peak_count * composite_count) 
+                       + ([p1_bounds[0]] * peak_count * composite_count) \
+                       + ([weight_bounds[0]] * 2 * peak_count)
         
         # Collect upper bounds for x linewidth, y linewidth, lower amplitude, and lower p0 and p1 for both axes
         bounds_lsq_high = ([upper_bound_x] * peak_count * composite_count) \
@@ -182,10 +190,10 @@ def composite_interferogram_optimization(input_spectrum: Spectrum, composite_fun
                        + ([p0_bounds[1]] * peak_count * composite_count) \
                        + ([p1_bounds[1]] * peak_count * composite_count) \
                        + ([p0_bounds[1]] * peak_count * composite_count) \
-                       + ([p1_bounds[1]] * peak_count * composite_count) 
+                       + ([p1_bounds[1]] * peak_count * composite_count) \
+                       + ([weight_bounds[1]] * 2 * peak_count)
         
         bounds = (bounds_lsq_low, bounds_lsq_high)
-
     else: 
         # ---------------------------------- Bounds ---------------------------------- #
 
@@ -199,6 +207,9 @@ def composite_interferogram_optimization(input_spectrum: Spectrum, composite_fun
 
         phase_p1_bounds = [p1_bounds] * peak_count # p1 bounds for x-axis and y-axis
 
+        gauss_weight_bounds = [weight_bounds] * peak_count  # Gaussian weight bounds for both axes
+
+        
         bounds = x_axis_bounds \
                + y_axis_bounds \
                + intensity_bounds \
@@ -206,7 +217,8 @@ def composite_interferogram_optimization(input_spectrum: Spectrum, composite_fun
                + phase_p1_bounds \
                + phase_p0_bounds \
                + phase_p1_bounds \
-               
+               + gauss_weight_bounds \
+               + gauss_weight_bounds
 
     # ----------------------------- Run Optimization ----------------------------- #
 
@@ -217,6 +229,8 @@ def composite_interferogram_optimization(input_spectrum: Spectrum, composite_fun
         errPrint(f"Peak Heights = {initial_peak_heights[0]:.3f},...")
         errPrint(f"X Phase = {(initial_phase_x[0], initial_phase_x[peak_count])}")
         errPrint(f"Y Phase = {(initial_phase_y[0], initial_phase_y[peak_count])}")
+        errPrint(f"Gauss Weight X = {initial_gauss_weight_x[0]}")
+        errPrint(f"Gauss Weight Y = {initial_gauss_weight_y[0]}")
         errPrint("")
 
     initial_params = np.concatenate((
@@ -224,7 +238,9 @@ def composite_interferogram_optimization(input_spectrum: Spectrum, composite_fun
         initial_peak_lw_y,
         initial_peak_heights,
         initial_phase_x, 
-        initial_phase_y
+        initial_phase_y,
+        initial_gauss_weight_x,
+        initial_gauss_weight_y,
         ))
 
     
@@ -234,7 +250,7 @@ def composite_interferogram_optimization(input_spectrum: Spectrum, composite_fun
         sim_params["difference_equation"] = lambda target, simulated: (target - simulated).flatten()
         optimization_args = (composite_count, input_spectrum, composite_function, input_fid, target_interferogram, sim_params)
         result = least_squares(composite_objective_function, initial_params, '2-point',
-                            bounds, 'trf', args=optimization_args, verbose=verbose, max_nfev=trial_count)
+                            bounds, 'dogbox', args=optimization_args, verbose=verbose, max_nfev=trial_count)
     elif method == 'basin':
         disp = True if input_spectrum.verbose else False
         result = basinhopping(composite_objective_function, initial_params, niter=trial_count, stepsize=step_size, 
@@ -264,8 +280,10 @@ def composite_interferogram_optimization(input_spectrum: Spectrum, composite_fun
     optimized_phase_x = (optimized_params[phase_start:phase_start + composite_total],  # X-axis p0 value
                optimized_params[phase_start + composite_total:phase_start + 2 * composite_total])  # X-axis p1 value
     optimized_phase_y = (optimized_params[phase_start + 2 * composite_total:phase_start + 3 * composite_total],  # Y-axis p0 value
-               optimized_params[phase_start + 3 * composite_total:])  # Y-axis p1 value
-    
+               optimized_params[phase_start + 3 * composite_total:phase_start + 4 * composite_total])  # Y-axis p1 value
+    optimized_gauss_weight_x = optimized_params[phase_start + 4 * composite_total:phase_start + 4 * composite_total + peak_count] # X-axis gauss weight
+    optimized_gauss_weight_y = optimized_params[phase_start + 4 * composite_total + peak_count:] # Y-axis gauss weight
+
     if input_spectrum.verbose:
         errPrint("")
         errPrint("Optimized Parameters:")
@@ -274,6 +292,8 @@ def composite_interferogram_optimization(input_spectrum: Spectrum, composite_fun
         errPrint(f"Peak Heights = {optimized_peak_heights}")
         errPrint(f"X Phase = {optimized_phase_x}")
         errPrint(f"Y Phase = {optimized_phase_y}")
+        errPrint(f"Gauss Weight X = {optimized_gauss_weight_x}")
+        errPrint(f"Gauss Weight Y = {optimized_gauss_weight_y}")
         errPrint("")
 
     # ------------------------------- New Spectrum ------------------------------- #
@@ -313,19 +333,21 @@ def composite_interferogram_optimization(input_spectrum: Spectrum, composite_fun
         )
         optimized_peak.phase = [xPhase, yPhase]
         optimized_spectrum.peaks.append(optimized_peak)
+        optimized_peak.gauss_weights = [optimized_gauss_weight_x[i], optimized_gauss_weight_y[i]]
     
     # Save optimized parameters to a text file with comma separated values
     with open("optimized_parameters.csv", "w") as file:
-        file.write("X_pos,Y_pos,X_LW_exp,X_LW_gauss,Y_LW_exp,Y_LW_gauss,Peak_H,X_P0_exp,X_P0_gauss,X_P1_exp,X_P1_gauss,Y_P0_exp,Y_P0_gauss,Y_P1_exp,Y_P1_gauss\n")
+        file.write("X_pos,Y_pos,X_LW_exp,X_LW_gauss,Y_LW_exp,Y_LW_gauss,Peak_H,X_P0_exp,X_P0_gauss,X_P1_exp,X_P1_gauss,Y_P0_exp,Y_P0_gauss,Y_P1_exp,Y_P1_gauss,X_gauss_wt,Y_gauss_wt\n")
         for i in range(peak_count):
-            file.write(f"{optimized_spectrum.peaks[i].position.x},{optimized_spectrum.peaks[i].position.y}" +
+            file.write(f"{optimized_spectrum.peaks[i].position.x.pts},{optimized_spectrum.peaks[i].position.y.pts}," +
                        f"{optimized_peak_lw_x[i]},{optimized_peak_lw_x[i+peak_count]}," +
                        f"{optimized_peak_lw_y[i]},{optimized_peak_lw_y[i+peak_count]}," +
                        f"{optimized_peak_heights[i]}," +
                        f"{optimized_phase_x[0][i]},{optimized_phase_x[0][i+peak_count]}," +
                        f"{optimized_phase_x[1][i]},{optimized_phase_x[1][i+peak_count]}," +
                        f"{optimized_phase_y[0][i]},{optimized_phase_y[0][i+peak_count]}," +
-                       f"{optimized_phase_y[1][i]},{optimized_phase_y[1][i+peak_count]}\n")
+                       f"{optimized_phase_y[1][i]},{optimized_phase_y[1][i+peak_count]}," +
+                       f"{optimized_gauss_weight_x[i]},{optimized_gauss_weight_y[i]}\n")
             
     return optimized_spectrum
 
@@ -369,7 +391,9 @@ def composite_objective_function(params, composite_count : int,
     phase_x = (params[phase_start:phase_start + composite_total],  # X-axis p0 value
                params[phase_start + composite_total:phase_start + 2 * composite_total])  # X-axis p1 value
     phase_y = (params[phase_start + 2 * composite_total:phase_start + 3 * composite_total],  # Y-axis p0 value
-               params[phase_start + 3 * composite_total:])  # Y-axis p1 value
+               params[phase_start + 3 * composite_total:phase_start + 4 * composite_total])  # Y-axis p1 value
+    gauss_weight_x = params[phase_start + 4 * composite_total:phase_start + 4 * composite_total + peak_count] # X-axis gauss weight
+    gauss_weight_y = params[phase_start + 4 * composite_total + peak_count:] # Y-axis gauss weight
 
     # Update peaks with the current parameters
     for i, peak in enumerate(input_spectrum.peaks):
@@ -377,6 +401,8 @@ def composite_objective_function(params, composite_count : int,
         peak.linewidths.y.pts = peak_y_lws[i]
         peak.exp_linewidths.x.pts = peak_x_lws[i]
         peak.exp_linewidths.y.pts = peak_y_lws[i]
+        peak.gauss_weights = [gauss_weight_x[i], gauss_weight_y[i]]
+        
         if composite_count >= 2:
             peak.gauss_linewidths.x.pts = peak_x_lws[i+peak_count]
             peak.gauss_linewidths.y.pts = peak_y_lws[i+peak_count]

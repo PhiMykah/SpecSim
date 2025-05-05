@@ -101,6 +101,9 @@ def interferogram_optimization(input_spectrum: Spectrum, model_function: ModelFu
     
     # Ensure initial phase values are within bounds
     for i, phase_value in enumerate(initial_phase):
+        # If phase value is a list with one element, take the first element
+        if isinstance(phase_value, list) and len(phase_value) == 1:
+            phase_value = phase_value[0]
         if not (p0_bounds[0] <= phase_value.p0 <= p0_bounds[1]):
             errPrint(f"Warning: Initial phase value for axis {i+1} P0 ({phase_value.p0}) is out of bounds {p0_bounds}. Adjusting to midpoint.")
             initial_phase[i] = Phase((p0_bounds[0] + p0_bounds[1]) / 2, initial_phase[i].p1)
@@ -133,10 +136,16 @@ def interferogram_optimization(input_spectrum: Spectrum, model_function: ModelFu
     # Collect initial parameters
     initial_peak_lw_x = [starting_x] * peak_count # Initial peak x linewidths
     initial_peak_lw_y = [starting_y] * peak_count # Initial peak y linewidths
-    initial_phase_x = ([initial_phase[0].p0] * peak_count) \
-                    + ([initial_phase[0].p1] * peak_count) # Initial x-axis p0 and p1 phase
-    initial_phase_y = ([initial_phase[1].p0] * peak_count) \
-                    + ([initial_phase[1].p1] * peak_count) # Initial y-axis p0 and p1 phase
+   
+    if isinstance(initial_phase[0], list) and len(initial_phase[0]) == 1:
+        ipx : Phase = initial_phase[0][0]
+    if isinstance(initial_phase[1], list) and len(initial_phase[1]) == 1:
+        ipy : Phase = initial_phase[1][0]
+
+    initial_phase_x = ([ipx.p0] * peak_count) \
+                    + ([ipx.p1] * peak_count) # Initial x-axis p0 and p1 phase
+    initial_phase_y = ([ipy.p0] * peak_count) \
+                    + ([ipy.p1] * peak_count) # Initial y-axis p0 and p1 phase
     initial_peak_heights = [peak.intensity for peak in input_spectrum.peaks] # Initial peak heights
 
     # Find the largest and smallest peak heights in the initial guess
@@ -220,7 +229,7 @@ def interferogram_optimization(input_spectrum: Spectrum, model_function: ModelFu
         sim_params["difference_equation"] = lambda target, simulated: (target - simulated).flatten()
         optimization_args = (input_spectrum, model_function, input_fid, target_interferogram, sim_params)
         result = least_squares(objective_function, initial_params, '2-point',
-                            bounds, 'trf', args=optimization_args, verbose=verbose, max_nfev=trial_count)
+                            bounds, 'dogbox', args=optimization_args, verbose=verbose, max_nfev=trial_count)
     elif method == 'basin':
         disp = True if input_spectrum.verbose else False
         result = basinhopping(objective_function, initial_params, niter=trial_count, stepsize=step_size, 
@@ -302,7 +311,7 @@ def interferogram_optimization(input_spectrum: Spectrum, model_function: ModelFu
     with open("optimized_parameters.csv", "w") as file:
         file.write("X_pos,Y_pos,X_LW,Y_LW,Peak_H,X_P0,X_P1,Y_P0,Y_P1\n")
         for i in range(peak_count):
-            file.write(f"{optimized_spectrum.peaks[i].position.x},{optimized_spectrum.peaks[i].position.y}" +
+            file.write(f"{optimized_spectrum.peaks[i].position.x.pts},{optimized_spectrum.peaks[i].position.y.pts}," +
                        f"{optimized_peak_lw_x[i]},{optimized_peak_lw_y[i]},{optimized_peak_heights[i]}," +
                        f"{optimized_phase_x[0][i]},{optimized_phase_x[1][i]}," +
                        f"{optimized_phase_y[0][i]},{optimized_phase_y[1][i]}\n")
