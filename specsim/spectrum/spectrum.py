@@ -1,27 +1,33 @@
-import sys, time, io
-import re
+from ..datatypes import Vector, PointUnits, Phase
+from ..peak import load_peak_table, Peak
+from .transform import outer_product_summation
 from pathlib import Path
-from ..peak import Peak, Coordinate, Coordinate2D, Phase
-from ..calculations import outer_product_summation, extract_region
-from ..models import sim_composite_1D
-from ..debug.verbose import errPrint
-import numpy as np
-
 import nmrPype as pype
-from typing import Callable, Optional, Annotated
+import numpy as np
+from typing import Callable, Any
+from enum import Enum
+from inspect import Signature, signature
+from copy import deepcopy
 
 type File = str | Path
-type ModelFunction = Callable[[int, int, int, float, float, Optional[np.ndarray], Optional[np.ndarray], float, tuple[int, int], float], np.ndarray]
+type ModelFunction = Callable[[Peak, int, int, int, PointUnits, list[PointUnits], float, list[Phase], int, np.ndarray | None, np.ndarray | None, float], np.ndarray]
 
-from matplotlib import pyplot as plt
+class Domain(Enum):
+    FID = 0
+    FT1 = 1
+    FT2 = 2
 
-# Axes
-X = 0 # First index for x-axis
-Y = 1 # Second index for y-axis
+    def to_string(self) -> str:
+        """
+        Converts the domain enum to a string representation.
 
-# ---------------------------------------------------------------------------- #
-#                                Spectrum Class                                #
-# ---------------------------------------------------------------------------- #
+        Returns
+        -------
+        str
+            String representation of the domain.
+        """
+        return self.name.lower()
+
 class Spectrum:
     """
     A class to contain the system of peaks that comprise the spectrum.
@@ -39,18 +45,15 @@ class Spectrum:
     attributes : dict[str, str]
         Dictionary of peak variables and formats
     
-    _spectral_widths : tuple[float, float]
-        The x-coord and y-coord spectral widths of the spectrum in Hz. 
-        Also known as the sweep width.
-    
-    _coordinate_origins : tuple[float, float]
-        The x-plane and y-plane origin of the coordinate system (in pts)
+    spectral_widths : Vector[float]
+        Spectral widths for each dimension.
 
-    _observation_freqs : tuple[float, float]
-        The x-plane and y-plane observation frequency of the spectrum
-
-    _total_points : tuple[int, int]
-        The total number of points in the spectrum for each dimension
+    coordinate_origins : Vector[float]
+        Coordinate origins for each dimension.
+    observation_frequencies : Vector[float]
+        Observation frequencies for each dimension.
+    total_frequency_points : Vector[int]
+        Total frequency points for each dimension.
     
     peaks : list[Peak]
         Line-by-line string list of all lines from the tab file
@@ -58,123 +61,137 @@ class Spectrum:
     verbose : bool
         Flag to enable verbose mode
     """
-    def __init__(self, peak_table_file : File, 
-                 spectral_widths : tuple[float,float], 
-                 coordinate_origins : tuple[float,float],
-                 observation_freqs : tuple[float,float],
-                 total_time_points : tuple[int, int],
-                 total_freq_points : tuple[int, int],
-                 verbose: bool = False):
-        
-        if type(peak_table_file) == str:
-            peak_table = Path(peak_table_file)
+    def __init__(self, file : File, spectral_widths : Vector[float], 
+                 coordinate_origins: Vector[float], 
+                 observation_frequencies: Vector[float], 
+                 total_time_points: Vector[int],
+                 total_frequency_points: Vector[int], verbose: bool = False) -> None:
+        """
+        Initialize the Spectrum object.
+
+        Parameters
+        ----------
+        file : Path
+            File directory of peak table
+        spectral_widths : Vector[float]
+            Spectral widths for each dimension.
+        coordinate_origins : Vector[float]
+            Coordinate origins for each dimension.
+        observation_frequencies : Vector[float]
+            Observation frequencies for each dimension.
+        total_time_points : Vector[int]
+            Total time points for each dimension.
+        total_frequency_points : Vector[int]
+            Total frequency points for each dimension.
+        verbose : bool, optional
+            Flag to enable verbose mode (default is False)
+        """
+        if type(file) == str:
+            peak_table_file = Path(file)
         else:
-            peak_table = peak_table_file
-        if not peak_table.exists():
-            raise IOError(f"Unable to find file: {peak_table}")
-
-        # Initializations
-        self.file : Path = peak_table
-        self.remarks : str = ""
-        self.attributes : dict[str, str] = []
-        self._spectral_widths = spectral_widths
-        self._coordinate_origins = coordinate_origins
-        self._observation_freqs = observation_freqs
-        self._total_time_points = total_time_points
-        self._total_freq_points = total_freq_points
-
-        self.peaks : list[Peak] = self._read_file()
-        self._null_string = '*'
-        self._null_value = -666
-        self.verbose = verbose
-
+            peak_table_file = file
+        if isinstance(peak_table_file, Path) and not peak_table_file.exists():
+            raise IOError(f"Unable to find file: {peak_table_file}")
+        
+        self._file: Path | str = peak_table_file
+        
+        self._spectral_widths: Vector[float] = spectral_widths
+        self._coordinate_origins: Vector[float] = coordinate_origins
+        self._observation_frequencies: Vector[float] = observation_frequencies
+        self._total_time_points: Vector[int] = total_time_points
+        self._total_frequency_points: Vector[int] = total_frequency_points
+        peaks, remarks, null_string, null_value, attributes = load_peak_table(file, 
+                                                                              self._spectral_widths, self._coordinate_origins,
+                                                                              self._observation_frequencies,
+                                                                              self._total_frequency_points)
+        self._peaks : list[Peak] = peaks
+        self._remarks: str = remarks
+        self._attributes : dict[str, str] = attributes
+        self._null_string : str = null_string
+        self._null_value : float = null_value
+        self.verbose: bool = verbose
+    
     # ---------------------------------------------------------------------------- #
-    #                         Spectral Simulation Functions                        #
+    #                              Spectral Simulation                             #
     # ---------------------------------------------------------------------------- #
 
-    def spectral_simulation(self, model_function : ModelFunction, 
-                            spectrum_data_frame : pype.DataFrame,
-                            spectrum_fid : pype.DataFrame,
-                            axis_count : int = 2,
-                            peaks_simulated : list[int] | int = 0, 
-                            domain : str = 'ft1',
-                            constant_time_region_sizes : Annotated[list[int], 2] = [0, 0],
-                            set_phase_values : bool = True,
-                            phase_values : Annotated[list[Phase], 2] = [Phase(0,0),Phase(0,0)],
-                            offsets : Annotated[list[int], 2] = [0,0],
-                            scaling_factors : Annotated[list[float], 2] = [1.0, 1.0]):
+    def simulate(self, model_function : ModelFunction, spectrum_data_frame : pype.DataFrame,
+                 spectrum_interferogram : pype.DataFrame, 
+                 spectrum_fid : pype.DataFrame, basis_set_folder : str | None = None, 
+                 dimensions : int = 2,
+                 peaks_simulated : list[int] | int | None = None,
+                 domain : int = 1, constant_time_region_sizes : Vector[int] | None = None,
+                 phase_values : Vector[Phase] | list[Vector[Phase]] | None = None,
+                 offsets : Vector[float] | None = None,
+                 scaling_factors : Vector[float] | None = None) -> np.ndarray:
         """
         Simulates a multi-dimensional spectrum based on the provided model function and parameters.
+        The simulation can be performed in either the time or frequency domain, and can include
+        multiple peaks with different phase values, offsets, and scaling factors.
 
         Parameters
         ----------
         model_function : ModelFunction
-            The model function used for spectral simulation.
-        spectrum_data_frame : nmrPype.DataFrame
-            nmrpype format data to obtain header information from
-        spectrum_fid : nmrPype.DataFrame
-            nmrpype format data to perform transforms on
-        axis_count : int, optional
-            Number of axes to simulate, by default 2
-        peaks_simulated : list[int] | int, optional
-            Number of peaks to simulate or indices of peaks to simulate, by default entire spectrum
-                - 0 simulates entire spectrum
-        domain : str, optional
-            The domain in which the simulation is performed, by default 'ft1'.
-                - 'fid' for time-domain
-                - 'ft1' for interferrogram
-                - 'ft2' for full spectrum
-        constant_time_region_sizes : Annotated[list[int], 2], optional
-            Total number of points in the constain time regions (pts), by default [0, 0]
-        set_phase_values : bool, optional
-            Update phase values for each peak to phase_values parameter, by default True
-        phase_values : Annotated[list[tuple[int,int]], 2], optional
-            multi-axis p0 and p1 phase correction values, by default [Phase(0,0),Phase(0,0)]
-        offsets : Annotated[list[int], 2], optional
-            multi-axis offset values of the frequency domain in points, by default [0,0]
-        scaling_factors : Annotated[list[float], 2], optional
-            multi-axis simulation time domain data scaling factor, by default [1.0, 1.0]
-        """
-        if set_phase_values and (model_function == sim_composite_1D):
-            spec_sim_phase_values = phase_values[0]
-        else:
-            spec_sim_phase_values = phase_values
-        if not (axis_count == len(constant_time_region_sizes) == len(spec_sim_phase_values) == len(offsets) == len(scaling_factors)):
-            raise ValueError(f"Axis count and parameter lengths do not match: "
-                             f"axis_count={axis_count}, " 
-                             f"constant_time_region_sizes={len(constant_time_region_sizes)}, "
-                             f"phase_values={len(phase_values)}, "
-                             f"offsets={len(offsets)}, "
-                             f"scaling_factors={len(scaling_factors)}")
-        simulations : list[np.ndarray] = []
-        # // Debug
-        # time_start = time.time()
-        for axis in range(axis_count):
-            if model_function == sim_composite_1D:
-                sim_1D_peaks = self.composite_simulation1D(model_function, peaks_simulated, axis,
-                                            constant_time_region_sizes[axis],
-                                            set_phase_values,
-                                            phase_values[axis], 
-                                            offsets[axis],
-                                            scaling_factors[axis])
-            else: 
-                sim_1D_peaks = self.spectral_simulation1D(model_function, peaks_simulated, axis,
-                                            constant_time_region_sizes[axis],
-                                            set_phase_values,
-                                            phase_values[axis],
-                                            offsets[axis],
-                                            scaling_factors[axis])
-            simulations.append(sim_1D_peaks)
+            The model function to be used for the simulation.
+        spectrum_data_frame : pype.DataFrame
+            The data frame to model the simulation on.
+        spectrum_interferogram : pype.DataFrame
+            The spectrum interferogram to model the simulation on.
+        spectrum_fid : pype.DataFrame
+            The base fid to perform spectral functions on
+        basis_set_folder : str | None
+            Folder to designate a basis set, or None if not utilized,
+            by default None
+        dimensions : int, optional
+            Number of dimensions to simulate, by default 2
+        peaks_simulated : list[int] | int | None, optional
+            Number of peaks simulated or indices of peaks simulated
+            None for all peaks, by default None
+        domain : int, optional
+            Domain of spectral simulation, 
+            0 for time domain, 1 for interferogram, and 2 for frequency domain, 
+            by default 1
+        constant_time_region_sizes : Vector[int] | None, optional
+            Number of points in the simulation with a constant time value,
+            by default None
+        phase_values : Vector[float] | list[Vector[float]] | None, optional
+            P0 and P1 phase correction values for each dimension, 
+            by default None
+        offsets : Vector[float] | None, optional
+            Offset values of the frequency domain in points for each dimension, 
+            by default None
+        scaling_factors : Vector[float] | None, optional
+            Simulation time domain data scaling factor for each dimension, 
+            by default None
 
-        process_iterations = 0
-        if domain == 'ft1' and axis_count >= 2:
-            process_iterations = 1
-        if domain == 'ft2' and axis_count >= 2:
-            process_iterations = 2
+        Returns
+        -------
+        np.ndarray
+            Simulated spectrum data as a numpy array.
+
+        Raises
+        ------
+        """
+        try:
+            self._validate_simulation_parameters(model_function, spectrum_data_frame, spectrum_interferogram, 
+                                spectrum_fid, dimensions, peaks_simulated, domain,
+                                constant_time_region_sizes, phase_values, offsets, scaling_factors)
+        except (TypeError, ValueError) as e:
+            raise e
+
+        # Perform a 1D simulation for each dimension of the spectrum
+        simulations : list[np.ndarray[Any, np.dtype[Any]]] = []
+        for dim in range(self._dimensions):
+            sim_1D_peaks : np.ndarray[Any, np.dtype[np.float32]] = self.spectral_simulation_1D(
+                model_function, dim, self._peaks_simulated, self._constant_time_region_sizes[dim],
+                self._phase_values, self._offsets[dim], self._scaling_factors[dim]
+            )
+            simulations.append(sim_1D_peaks)
         
-        # Collect all the x axis peaks and y axis peaks
-        spectral_data : list[list[np.ndarray]] = [*simulations]
-        fid = spectrum_fid
+        process_iterations : int = int(self._domain.value) if dimensions >= 1 else 0
+
+        spectral_data : list = [*simulations]
+        fid : pype.DataFrame = spectrum_fid
 
         # Iterate through all dimensions in need of processing
         for i in range(process_iterations):
@@ -183,16 +200,16 @@ class Spectrum:
             for j in range(len(simulations[i])):
                 iteration_df = pype.DataFrame(file=fid.file, header=fid.header, array=fid.array)
                 iteration_df.array = simulations[i][j]
-                dim = i + 1
+                dim : int = i + 1
 
                 #  Add first point scaling and window function if necessary
-                off_param = spectrum_data_frame.getParam("NDAPODQ1", dim)
-                end_param = spectrum_data_frame.getParam("NDAPODQ2", dim)
-                pow_param = spectrum_data_frame.getParam("NDAPODQ3", dim)
-                elb_param = spectrum_data_frame.getParam("NDLB", dim)
-                glb_param = spectrum_data_frame.getParam("NDGB", dim)
-                goff_param = spectrum_data_frame.getParam("NDGOFF", dim)
-                first_point_scale = 1 + spectrum_data_frame.getParam("NDC1", dim)
+                off_param : float = spectrum_data_frame.getParam("NDAPODQ1", dim)
+                end_param : float = spectrum_data_frame.getParam("NDAPODQ2", dim)
+                pow_param : float = spectrum_data_frame.getParam("NDAPODQ3", dim)
+                elb_param : float = spectrum_data_frame.getParam("NDLB", dim)
+                glb_param : float = spectrum_data_frame.getParam("NDGB", dim)
+                goff_param : float = spectrum_data_frame.getParam("NDGOFF", dim)
+                first_point_scale : float = 1 + spectrum_data_frame.getParam("NDC1", dim)
 
                 iteration_df.runFunc("SP", {"sp_off":off_param, "sp_end":end_param, "sp_pow":pow_param, "sp_elb":elb_param,
                                             "sp_glb":glb_param, "sp_goff":goff_param, "sp_c":first_point_scale})
@@ -202,388 +219,138 @@ class Spectrum:
                 # Convert to frequency domain
                 iteration_df.runFunc("FT")
                 
-                # Perform phase correction
-                if model_function == sim_composite_1D:
-                    iteration_df.runFunc("PS", {"ps_p0":np.float32(spec_sim_phase_values[i][0]), "ps_p1":np.float32(spec_sim_phase_values[i][1])})
-                else:
-                    if isinstance(spec_sim_phase_values[i], list) and len(spec_sim_phase_values[i]) == 1:
-                        ps = spec_sim_phase_values[i][0]
-                    else:
-                        ps = spec_sim_phase_values[i]
-                    iteration_df.runFunc("PS", {"ps_p0":np.float32(ps[0]), "ps_p1":np.float32(ps[1])})
+                # No need to perform phase correction since each peak has been properly phase corrected 
 
                 # Delete imaginary values
-                # simulations[i] = simulations[i].real
                 iteration_df.runFunc("DI")
                 
                 # Extract designated region if necessary
                 first_point = int(spectrum_data_frame.getParam("NDX1", dim))
                 last_point = int(spectrum_data_frame.getParam("NDXN", dim))
                 if first_point and last_point:
-                    iteration_df.array = extract_region(iteration_df.array, first_point, last_point)
+                    if first_point != 0 or last_point != 0:
+                        if first_point == 1:
+                            first_point : int = first_point-1 
+                        if first_point <= last_point:
+                            iteration_df.array = iteration_df.array[first_point:last_point+1]
 
                 # Add peak to list
                 spectral_data[i].append(iteration_df.array)
 
-        if axis_count == 2:
-            result = outer_product_summation(spectral_data[0], spectral_data[1])
-    
-            # // Debug
-            # time_end = time.time()
-            # peak_count = (len(peaks_simulated) if isinstance(peaks_simulated, list) 
-            #             else (len(self.peaks) if peaks_simulated == 0 else peaks_simulated))
-            # print(f"Simulation of {peak_count} peak(s) took {time_end-time_start:.3f}s")
+        if dimensions == 2:
+            result : np.ndarray[Any, np.dtype[Any]] = outer_product_summation(spectral_data[0], spectral_data[1])
 
+            self._build_basis_set(basis_set_folder, spectral_data)
             return result
-        return spectral_data
+        
+        return np.ndarray(spectral_data)
 
-    def spectral_simulation1D(self, model_function : ModelFunction,
-                           peaks_simulated : list[int] | int = 0, 
-                           axis : int = X,
-                           constant_time_region_size : int = 0,
-                           set_phase_value : bool = True,
-                           phase : tuple[int,int] = (0,0),
-                           offset : int = 0,
-                           scaling_factor : float = 1.0) -> np.ndarray:
+
+    def spectral_simulation_1D(self, model_function : ModelFunction, dim : int,
+                            peaks_simulated : list[int],
+                            constant_time_region_size : int,
+                            phase_values : list[Vector[Phase]] | None,
+                            offset : float,
+                            scaling_factor : float) -> np.ndarray:
         """
-        Perform spectral simulation using inputted decay function model
+        Simulates a 1D spectrum based on the provided model function and parameters.
+        The simulation can be performed in either the time or frequency domain, and can include
+        multiple peaks with different phase values, offsets, and scaling factors.
 
         Parameters
         ----------
         model_function : ModelFunction
-            Target modeling function for simulation, e.g. exponential, gaussian
-        peaks_simulated : list[int] | int
-            Number of peaks to simulate or indices of peaks to simulate. by default 0
-                - 0 simulates entire spectrum
-        axis : int
-            Designated axis to simulate, e.g. 0 for 'x', 1 for 'y'.
+            The model function to be used for the simulation.
+        spectrum_data_frame : pype.DataFrame
+            The data frame to model the simulation on.
+        spectrum_fid : pype.DataFrame
+            The base fid to perform spectral functions on
+        dim : int
+            Dimension of the spectrum to simulate.
+        peaks_simulated : list[int]
+            Indices of peaks to be simulated.
+        domain : Domain
+            Domain of spectral simulation.
         constant_time_region_size : int
-            Total number of points in the constain time region (pts), by default 0
-        set_phase_values : bool, optional
-            Update phase values for each peak to phase_values parameter, by default True
-        phase : tuple[int,int]
-            p0 and p1 phase correction values, by default (0,0)
+            Number of points in the simulation with a constant time value.
+        phase_values : list[Vector[Phase]]
+            List of P0 and P1 phase correction  Vectors.
         offset : int
-            Offset of the frequency domain in points, by default 0
+            Offset value of the frequency domain in points for the dimension.
         scaling_factor : float
-            Simulation time domain data scaling factor, by default 1.0
+            Simulation time domain data scaling factor for the dimension.
 
         Returns
         -------
         np.ndarray
-            Return Simulated Spectrum
-
-        Raises
-        ------
-        TypeError
-            Raises an type error if peaks_simulated is incorrectly inputted
+            Simulated spectrum data as a 1D numpy array.
         """
-        peak_count = -1
-        peak_indices = []
-        usePeakCount = True
+        spectrum_list : list[Any] = []
+        # Iterate over the peaks to be simulated
+        for i in peaks_simulated:
+            # Get the peak position in the current dimension
+            frequency : float = self._peaks[i].position[dim] + offset
 
-        # Use number of peaks if input is integer
-        if type(peaks_simulated) == int:
-            peak_count = peaks_simulated
-            usePeakCount = True
-        # Use index list if input is list
-        elif type(peaks_simulated) == list:
-            peak_indices = [i for i in peaks_simulated if i < len(self.peaks)]
-            usePeakCount = False
-        # Raise error if input does not match integer and list
-        else:
-            raise TypeError("Incorrect Type for Simulation, use a list of indices or an integer count")
-        
+            # Get the peak linewidths in the current dimension
+            linewidths : list[PointUnits] = []
+            for linewidth in self._peaks[i].linewidth:
+                linewidths.append(linewidth[dim])
 
+            # Get the peak intensity in the current dimension
+            amplitude : float = self._peaks[i].intensity
 
-        # Set range if number of peaks is input
-        if usePeakCount:
-            # Ensure nonzero integer count
-            if peak_count < 0:
-                peak_count = 0
-
-            # Use entire spectrum if peak count is 0 or exceeds maximum
-            if peak_count > len(self.peaks) or peak_count == 0:
-                peak_count = len(self.peaks)
-            peak_indices = range(peak_count)
-
-        spectrum_list = []
-        # Iterate through given peaks in the spectrum
-        for i in peak_indices:
-            spectrum_list.append(self._run_simulation_iteration(model_function, i,
-                                            axis, constant_time_region_size, offset, scaling_factor,
-                                            set_phase_value, phase))
+            # Update phase values if provided
+            if phase_values:
+                self._peaks[i].phase = phase_values
             
-        return np.array(spectrum_list)
+            simulation_phases : list[Phase] = []
+            for vector in self._peaks[i].phase:
+                simulation_phases.append(vector[dim])
 
-    def _run_simulation_iteration(self, model_function : ModelFunction, 
-                                  index : int, axis : int, constant_time_region_size : int,
-                                  offset : int,
-                                  scaling_factor : float,
-                                  set_phase_value : bool = True,
-                                  phase : Phase = Phase(0,0)
-                                  ) -> np.ndarray:
-        """
-        Run a single iteration of a spectral time domain simulation.
+            # Set modulation dim to X, Y, etc
+            cosine_modulation : str = f"{chr(dim + ord('X'))}_COSJ"
+            sine_modulation : str = f"{chr(dim + ord('X'))}_SINJ"
 
-        Parameters
-        ----------
-        model_function : ModelFunction
-            Model simulation function such as exponential or gaussian
-        index : int
-            Current iteraiton index
-        axis : str
-            Designated axis to simulate, e.g. 0 for 'x', 1 for 'y'.
-        constant_time_region_size : int
-            Total number of points in the constain time region (pts)
-        phase : tuple[int,int]
-            p0 and p1 phase correction values
-        offset : int
-            Offset of the frequency domain in points
-        scaling_factor : float
-            Simulation time domain data scaling factor
+            # Collect cosine moduation if it exists
+            cos_mod_j : np.ndarray[Any, np.dtype[Any]] | None = np.array(self._peaks[i].extra_params.get(cosine_modulation, None)) \
+                if self._peaks[i].extra_params.get(cosine_modulation) else None
+            
+            # Collect sine modulation if it exists
+            sin_mod_j : np.ndarray[Any, np.dtype[Any]] | None = np.array(self._peaks[i].extra_params.get(sine_modulation)) \
+                if self._peaks[i].extra_params.get(sine_modulation) else None
 
-        Returns
-        -------
-        np.ndarray
-            Simulation slice based on model function
-        """
-
-        if axis not in [X, Y]:
-            TypeError("Incorrect Axis Type for Simulation, please enter a supported axis type.")
-
-        if isinstance(phase, list) and len(phase) == 1:
-            phase = phase[0]
-
-        if set_phase_value:
-            if axis == X:
-                self.peaks[index].xPhase = phase
-            if axis == Y:
-                self.peaks[index].yPhase = phase
-
-        # Obtain frequency and add offset if necessary
-        frequency_pts = self.peaks[index].position[axis] + offset
-
-        # Collect line width, and intensity
-        line_width = self.peaks[index].linewidths[axis]
-
-        amplitude = self.peaks[index].intensity
-
-        # Set modulation axis to X, Y, etc
-        cosine_modulation = f"{chr(axis + ord('X'))}_COSJ"
-        sine_modulation = f"{chr(axis + ord('X'))}_SINJ"
-
-        # Collect cosine moduation if it exists
-        cos_mod_j = np.array(self.peaks[index].extra_params.get(cosine_modulation, None)) \
-            if self.peaks[index].extra_params.get(cosine_modulation) else None
-        
-        # Collect sine modulation if it exists
-        sin_mod_j = np.array(self.peaks[index].extra_params.get(sine_modulation)) \
-            if self.peaks[index].extra_params.get(sine_modulation) else None
-
-        return(
-            model_function(self._total_time_points[axis], self._total_freq_points[axis],
-                           constant_time_region_size, frequency_pts,
-                           line_width,
-                           cos_mod_values=cos_mod_j,
-                           sin_mod_values=sin_mod_j,
-                           amplitude=amplitude, phase=self.peaks[index].phase[axis],
-                           scale=scaling_factor))
-
-    
-    def composite_simulation1D(self, composite_function,
-                            peaks_simulated : list[int] | int = 0, 
-                            axis : int = X,
-                            constant_time_region_size : int = 0,
-                            set_phase_value : bool = True,
-                            phase : tuple[int,int] = (0,0),
-                            offset : int = 0,
-                            scaling_factor : float = 1.0) -> np.ndarray:
-        peak_count = -1
-        peak_indices = []
-        usePeakCount = True
-
-        # Use number of peaks if input is integer
-        if type(peaks_simulated) == int:
-            peak_count = peaks_simulated
-            usePeakCount = True
-        # Use index list if input is list
-        elif type(peaks_simulated) == list:
-            peak_indices = [i for i in peaks_simulated if i < len(self.peaks)]
-            usePeakCount = False
-        # Raise error if input does not match integer and list
-        else:
-            raise TypeError("Incorrect Type for Simulation, use a list of indices or an integer count")
-        
-
-
-        # Set range if number of peaks is input
-        if usePeakCount:
-            # Ensure nonzero integer count
-            if peak_count < 0:
-                peak_count = 0
-
-            # Use entire spectrum if peak count is 0 or exceeds maximum
-            if peak_count > len(self.peaks) or peak_count == 0:
-                peak_count = len(self.peaks)
-            peak_indices = range(peak_count)
-
-        spectrum_list = []
-        # Iterate through given peaks in the spectrum
-        for i in peak_indices:
             spectrum_list.append(
-                self._run_composite_iteration(composite_function, i, axis, 
-                                              constant_time_region_size, offset, scaling_factor, set_phase_value, phase
-                                              ))
-            
+                model_function(self._peaks[i], dim, self._total_time_points[dim], self._total_frequency_points[dim],
+                               frequency, linewidths, amplitude, simulation_phases, constant_time_region_size,
+                                cos_mod_j, sin_mod_j, scaling_factor)
+                )
+        # Combine the simulated peaks into a single spectrum
         return np.array(spectrum_list)
-    
-    def _run_composite_iteration(self, composite_function, 
-                                index : int, axis : int, constant_time_region_size : int,
-                                offset : int,
-                                scaling_factor : float,
-                                set_phase_value : bool = True,
-                                phase : Phase = Phase(0,0)
-                                ) -> np.ndarray:
+
+    # ---------------------------------------------------------------------------- #
+    #                               Helper Functions                               #
+    # ---------------------------------------------------------------------------- #
+
+    def _build_basis_set(self, basis_folder : str | None, spectral_data : list[np.ndarray]) -> None:
         """
-        Run a single iteration of a spectral time domain simulation composite model.
+        Generate a basis set from the data
 
         Parameters
         ----------
-        composite_function
-            Model simulation function such as exponential or gaussian
-        index : int
-            Current iteraiton index
-        axis : str
-            Designated axis to simulate, e.g. 0 for 'x', 1 for 'y'.
-        constant_time_region_size : int
-            Total number of points in the constain time region (pts)
-        phase : tuple[int,int]
-            p0 and p1 phase correction values
-        offset : int
-            Offset of the frequency domain in points
-        scaling_factor : float
-            Simulation time domain data scaling factor
-
-        Returns
-        -------
-        np.ndarray
-            Simulation slice based on model function
+        basis_set_folder : str | None
+            Folder to designate a basis set
+        spectral_data : list[np.ndarray]
+            _description_
         """
-
-        if axis not in [X, Y]:
-            TypeError("Incorrect Axis Type for Simulation, please enter a supported axis type.")
-
-        if set_phase_value:
-            self.peaks[index].phase_exp[axis] = phase[axis]
-            self.peaks[index].phase_gauss[axis] = phase[axis]
-
-        # Obtain frequency and add offset if necessary
-        frequency_pts = self.peaks[index].position[axis] + offset
-
-        # Collect line width, and intensity
-        exp_line_width = self.peaks[index].exp_linewidths[axis]
-        gauss_line_width = self.peaks[index].gauss_linewidths[axis]
-
-        amplitude = self.peaks[index].intensity
-
-        # Set modulation axis to X, Y, etc
-        # cosine_modulation = f"{chr(axis + ord('X'))}_COSJ"
-        # sine_modulation = f"{chr(axis + ord('X'))}_SINJ"
-
-        # # Collect cosine moduation if it exists
-        # if self.peaks[index].extra_params[cosine_modulation]:
-        #     cos_mod_j = np.array(self.peaks[index].extra_params[cosine_modulation])
-        # else:
-        #     cos_mod_j = None
+        if not basis_folder:
+            return 
         
-        # # Collect sine modulation if it exists
-        # if self.peaks[index].extra_params[sine_modulation]:
-        #     sin_mod_j = np.array(self.peaks[index].extra_params[sine_modulation])
-        # else:
-        #     sin_mod_j = None
-
-        return(sim_composite_1D(
-            self._total_time_points[axis], self._total_freq_points[axis], 
-            constant_time_region_size, frequency_pts, exp_line_width, gauss_line_width,
-            amplitude, self.peaks[index].phase_exp[axis], self.peaks[index].phase_gauss[axis],
-            self.peaks[index].gauss_weights[axis], scaling_factor
-            ))
-    
-    def create_basis_set(self, folder_name : str, fid: pype.DataFrame, interferogram : pype.DataFrame, spectrum_df : pype.DataFrame, 
-                         model_function, offsets : list[float], scaling_factors : list[float], domain : str = 'ft1'):
-        simulations = []
-        axis_count = 2
-        for axis in range(axis_count):
-            if model_function == sim_composite_1D:
-                sim_1D_peaks = self.composite_simulation1D(model_function, 0, axis, 0, False, 
-                                                           offset=offsets[axis], scaling_factor=scaling_factors[axis])
-            else:
-                sim_1D_peaks = self.spectral_simulation1D(model_function, 0, axis, 0, False, 
-                                                          offset=offsets[axis], scaling_factor=scaling_factors[axis])
-            simulations.append(sim_1D_peaks)
-        pass
-
-        # Collect all the axis peaks
-        spectral_data : list[list[np.ndarray]] = [*simulations]
-
-        process_iterations = 0
-        if domain == 'ft1' and axis_count >= 2:
-            process_iterations = 1
-        if domain == 'ft2' and axis_count >= 2:
-            process_iterations = 2
-
-        # Iterate through all dimensions in need of processing
-        for i in range(process_iterations):
-            spectral_data[i] = []
-            # Go through all peaks in simulation
-            for j in range(len(simulations[i])):
-                iteration_df = pype.DataFrame(file=fid.file, header=fid.header, array=fid.array)
-                iteration_df.array = simulations[i][j]
-                dim = i + 1
-
-                #  Add first point scaling and window function if necessary
-                off_param = spectrum_df.getParam("NDAPODQ1", dim)
-                end_param = spectrum_df.getParam("NDAPODQ2", dim)
-                pow_param = spectrum_df.getParam("NDAPODQ3", dim)
-                elb_param = spectrum_df.getParam("NDLB", dim)
-                glb_param = spectrum_df.getParam("NDGB", dim)
-                goff_param = spectrum_df.getParam("NDGOFF", dim)
-                first_point_scale = 1 + spectrum_df.getParam("NDC1", dim)
-
-                iteration_df.runFunc("SP", {"sp_off":off_param, "sp_end":end_param, "sp_pow":pow_param, "sp_elb":elb_param,
-                                            "sp_glb":glb_param, "sp_goff":goff_param, "sp_c":first_point_scale})
-                # Zero fill if necessary
-                iteration_df.runFunc("ZF", {"zf_count":1, 'zf_auto':True})
-
-                # Convert to frequency domain
-                iteration_df.runFunc("FT")
-                
-                # Perform phase correction
-                if model_function == sim_composite_1D: 
-                    iteration_df.runFunc("PS", {"ps_p0":self.peaks[j].phase[i][0], "ps_p1":self.peaks[j].phase[i][1]})
-                else:
-                    iteration_df.runFunc("PS", {"ps_p0":self.peaks[j].phase[i][0], "ps_p1":self.peaks[j].phase[i][1]})
-
-                # Delete imaginary values
-                # simulations[i] = simulations[i].real
-                iteration_df.runFunc("DI")
-                
-                # Extract designated region if necessary
-                first_point = int(spectrum_df.getParam("NDX1", dim))
-                last_point = int(spectrum_df.getParam("NDXN", dim))
-                if first_point and last_point:
-                    iteration_df.array = extract_region(iteration_df.array, first_point, last_point)
-
-                # Add peak to list
-                spectral_data[i].append(iteration_df.array)
-        
-        x_axis = spectral_data[0]
-        y_axis = spectral_data[1]    
-        y_length = y_axis.shape[-1]
+        x_axis : np.ndarray[Any, np.dtype[Any]] = spectral_data[0]
+        y_axis : np.ndarray[Any, np.dtype[Any]] = spectral_data[1]    
+        y_length : int = y_axis.shape[-1]
 
         if np.iscomplexobj(y_axis):
-            interleaved_data = np.zeros(y_axis.shape[:-1] + (y_length * 2,), dtype=y_axis.real.dtype)
+            interleaved_data : np.ndarray[Any, np.dtype[Any]] = np.zeros(y_axis.shape[:-1] + (y_length * 2,), dtype=y_axis.real.dtype)
             for i in range(len(interleaved_data)):
                 interleaved_data[i][0::2] = y_axis[i].real
                 interleaved_data[i][1::2] = y_axis[i].imag
@@ -592,17 +359,17 @@ class Spectrum:
             y_length = y_length * 2
 
         # Create the x-axis y-axis pairings
-        planes = []
-        peak_count = len(self.peaks)
+        planes : list[Any] = []
+        peak_count : int = len(self._peaks)
 
         for i in range(peak_count):
-            plane = np.outer(y_axis[i], x_axis[i])
-            if domain == 'ft2':
-                iteration_df = pype.DataFrame(file=spectrum_df.file, header=spectrum_df.header, array=plane)
-            elif domain == 'fid':
-                iteration_df = pype.DataFrame(file=fid.file, header=fid.header, array=plane)
+            plane : np.ndarray[Any, np.dtype[Any]] = np.outer(y_axis[i], x_axis[i])
+            if self._domain == Domain.FT2:
+                iteration_df = pype.DataFrame(file=self._spectrum_data_frame.file, header=self._spectrum_data_frame.header, array=plane)
+            elif self._domain == Domain.FID:
+                iteration_df = pype.DataFrame(file=self._spectrum_fid.file, header=self._spectrum_fid.header, array=plane)
             else:
-                iteration_df = pype.DataFrame(file=interferogram.file, header=interferogram.header, array=plane)
+                iteration_df = pype.DataFrame(file=self._spectrum_interferogram.file, header=self._spectrum_interferogram.header, array=plane)
             
             # Set plane datatype to float32 if float64 and complex64 if complex128
             if plane.dtype == np.float64:
@@ -612,269 +379,385 @@ class Spectrum:
 
             iteration_df.setArray(plane)
             # Ensure output directory exists
-            output_dir = Path(folder_name)
+            output_dir = Path(basis_folder)
             output_dir.mkdir(parents=True, exist_ok=True)
 
             # Save the plane to a file
-            max_digits = len(str(peak_count))
-            output_file = output_dir / f"{i + 1:0{max_digits}}.{domain}"
+            max_digits: int = len(str(peak_count))
+            output_file : Path = output_dir / f"{i + 1:0{max_digits}}.{self._domain.to_string()}"
 
             pype.write_to_file(iteration_df, str(output_file) , True)
             planes.append(plane)
 
-    # ---------------------------------------------------------------------------- #
-    #                              Peak Table Reading                              #
-    # ---------------------------------------------------------------------------- #
 
-    def _read_file(self) -> list[Peak]:
+    def _validate_simulation_parameters(self, model_function, spectrum_data_frame, spectrum_interferogram,
+                        spectrum_fid, dimensions, peaks_simulated, domain, constant_time_region_sizes,
+                        phase_values, offsets, scaling_factors) -> None:
         """
-        Reads from peak table and strips unnecessary lines from process
-        Note: Assumes that self.file has been populated and is a valid file
+        Helper function to validate simulation parameters.
+
+        Parameters
+        ----------
+        model_function : ModelFunction
+            The model function to be used for the simulation.
+        spectrum_data_frame : pype.DataFrame
+            The data frame to model the simulation on.
+        spectrum_interferogram : pype.DataFrame
+            The spectrum interferogram to model the simulation on.
+        spectrum_fid : pype.DataFrame
+            The base fid to perform spectral functions on.
+        dimensions : int
+            Number of dimensions to simulate.
+        peaks_simulated : list[int] | int | None
+            Number of peaks simulated or indices of peaks simulated.
+        domain : int
+            Domain of spectral simulation.
+        constant_time_region_sizes : Vector[int] | None
+            Number of points in the simulation with a constant time value.
+        phase_values : Vector[float] | list[Vector[float]] | None
+            P0 and P1 phase correction values for each dimension.
+        offsets : Vector[float] | None
+            Offset values of the frequency domain in points for each dimension.
+        scaling_factors : Vector[float] | None
+            Scaling factors for the simulation.
+
+        Raises
+        ------
+        TypeError, ValueError
+            If any parameter is invalid.
+        """
+        # ------------------------------ model_function ------------------------------ #
+        if not callable(model_function):
+            raise TypeError("model_function must be a callable function.")
+        # Check the signature of the model_function
+        model_function_signature: Signature = signature(model_function)
+        expected_parameters: list[str] = [
+            'peak', 'dimension', 'time_domain_size', 'frequency_domain_size', 'frequency', 'linewidths',
+            'amplitude', 'phases', 'constant_time_region_size', 'cos_mod_values', 'sin_mod_values', 'scale'
+        ]
+        if list(model_function_signature.parameters.keys()) != expected_parameters:
+            raise TypeError(f"model_function must have the following parameters: {', '.join(expected_parameters)}")
+        if model_function_signature.return_annotation != np.ndarray:
+            raise TypeError("model_function must return a numpy ndarray.")
+        
+        # ---------------------------- spectrum_data_frame --------------------------- #
+        if not isinstance(spectrum_data_frame, pype.DataFrame):
+            raise TypeError("spectrum_data_frame must be an nmrPype DataFrame.")
+        
+        # ------------------------------- spectrum_fid ------------------------------- #
+        if not isinstance(spectrum_fid, pype.DataFrame):
+            raise TypeError("spectrum_fid must be an nmrPype DataFrame.")
+        
+        # -------------------------------- dimensions -------------------------------- #
+        if isinstance(dimensions, str):
+            try:
+                dimensions = int(dimensions)
+            except ValueError:
+                raise ValueError("dimensions must be a positive integer.")
+        if not isinstance(dimensions, int) or not (1 <= dimensions <= 4):
+            raise ValueError("dimensions must be an integer between 1 and 4.")
+        if dimensions > len(self._spectral_widths):
+            raise ValueError(f"dimensions must be less than or equal to the number of spectral widths ({len(self._spectral_widths)}).")
+        
+        # ------------------------------ peaks_simulated ----------------------------- #
+        if peaks_simulated is not None:
+            if isinstance(peaks_simulated, int):
+                if peaks_simulated == 0:
+                    peaks_simulated = list(range(len(self._peaks)))
+                elif peaks_simulated < 0: 
+                    peaks_simulated = list(range(min(abs(peaks_simulated), len(self._peaks))))
+                else:
+                    peaks_simulated = list(range(min(peaks_simulated, len(self._peaks))))
+            if not isinstance(peaks_simulated, list):
+                raise TypeError("peaks_simulated must be a list of integers or None.")
+            for peak in peaks_simulated:
+                if not isinstance(peak, int) or peak < 0 or peak >= len(self._peaks):
+                    raise ValueError(f"peaks_simulated must be a list of integers between 0 and {len(self._peaks)-1}.")
+        else:
+            peaks_simulated = list(range(len(self._peaks)))
+
+        # ---------------------------------- domain ---------------------------------- #
+        if not isinstance(domain, int):
+            raise ValueError("domain must be an integer: 0 (time), 1 (interferogram), or 2 (frequency).")
+        # convert domain to enum using match case
+        match domain:
+            case 0:
+                domain = Domain.FID
+            case 1:
+                domain = Domain.FT1
+            case 2:
+                domain = Domain.FT2
+            case _:
+                raise ValueError("domain must be an integer: 0 (fid), 1 (ft1), or 2 (ft2).")
+            
+        # ------------------------ constant_time_region_sizes ------------------------ #
+        if constant_time_region_sizes is not None:
+            if not isinstance(constant_time_region_sizes, Vector) or len(constant_time_region_sizes) != dimensions:
+                raise TypeError("constant_time_region_sizes must be a Vector of integers with length equal to dimensions.")
+            for size in constant_time_region_sizes:
+                if not isinstance(size, int) or size < 0:
+                    raise ValueError("constant_time_region_sizes must be a Vector of positive integers.")
+        else:
+            default_constant_region : list[int] = [0] * dimensions
+            constant_time_region_sizes = Vector(default_constant_region)
+
+        # ------------------------------- phase_values ------------------------------- #
+        phase_vals : list[Vector[Phase]] | None = None 
+        if phase_values is not None:
+            if isinstance(phase_values, float) or isinstance(phase_values, int):
+                # Clamp value to -180 to 180 degrees
+                new_phase: float = max(Phase.MIN, min(Phase.MAX, phase_values))
+                vector : list[Phase] = [Phase(new_phase, new_phase)] * dimensions
+                phase_vals : list[Vector[Phase]] | None = [Vector(vector)]
+            elif isinstance(phase_values, Vector):
+                # Ensure vector is of type Phase
+                if not all(isinstance(phase, Phase) for phase in phase_values):
+                    raise TypeError("phase_values must be a Vector of Phases.")
+                # Check that all elements are of the same length as dimensions
+                if len(phase_values) != dimensions:
+                    raise ValueError(f"phase_values must be a Vector of Phases with length equal to {dimensions}.")
+                phase_vals : list[Vector[Phase]] | None = [phase_values]
+            elif isinstance(phase_values, list):
+                # Check that all elements are of type Vector
+                if not all(isinstance(value, Vector) for value in phase_values):
+                    raise TypeError("phase_values must be a list of Phase Vectors.")
+                # Check that all elements are of the same length as dimensions\
+                if not all(len(value) == dimensions for value in phase_values):
+                    raise ValueError(f"phase_values must be a list of Phase Vectors with length equal to {dimensions}.")
+                # Check that all elements are of type Phase
+                if not all(all(isinstance(phase, Phase) for phase in value) for value in phase_values):
+                    raise TypeError("phase_values must be a list of Phase Vectors.")
+            else:
+                raise TypeError("phase_values must be a float, int, Phase Vector, or list of Phase Vectors.")
+        else:
+            phase_vals : list[Vector[Phase]] | None = None
+
+        # ---------------------------------- offsets --------------------------------- #
+        if offsets is not None:
+            if not isinstance(offsets, Vector) or len(offsets) != dimensions:
+                raise TypeError("offsets must be a Vector of integers with length equal to dimensions.")
+            for offset in offsets:
+                if not isinstance(offset, (int, float)) or offset < 0:
+                    raise ValueError("offsets must be a Vector of positive integers or floats.")
+            new_offsets : Vector[float] = offsets
+        else:
+            zero_vector : list[float] = [0.0] * dimensions
+            new_offsets : Vector[float] = Vector(zero_vector)
+
+        # ------------------------------ scaling_factors ----------------------------- #
+        if scaling_factors is not None:
+            if not isinstance(scaling_factors, Vector) or len(scaling_factors) != dimensions:
+                raise TypeError("scaling_factors must be a Vector of floats with length equal to dimensions.")
+            for factor in scaling_factors:
+                if not isinstance(factor, (int, float)) or factor < 0:
+                    raise ValueError("scaling_factors must be a Vector of positive floats.")
+        else:
+            zero_vector = [1] * dimensions
+            scaling_factors = Vector(zero_vector)
+
+        # Set the attributes
+        self._model_function : Callable[..., object] = model_function
+        self._spectrum_data_frame : pype.DataFrame = spectrum_data_frame
+        self._spectrum_interferogram : pype.DataFrame = spectrum_interferogram
+        self._spectrum_fid : pype.DataFrame = spectrum_fid
+        self._dimensions : int = dimensions
+        self._peaks_simulated : list[int] = peaks_simulated
+        self._domain : Domain = domain
+        self._constant_time_region_sizes : Vector[int] = constant_time_region_sizes
+        self._phase_values : list[Vector[Phase]] | None = phase_vals
+        self._offsets : Vector[float] = new_offsets
+        self._scaling_factors : Vector[float] = scaling_factors
+
+    def update_peaks(self, decay_list : list, 
+                     phase_list : list, peak_height_list : list, weights : list, 
+                     unpack_count : int, num_of_dimensions : int) -> None:
+        """
+        Updates the peaks with the provided decay, phase, and intensity parameters.
+
+        Parameters
+        ----------
+        decay_list : list
+            A list of decay values used to update the linewidth of each peak.
+        phase_list : list
+            A list of phase values used to update the p0 and p1 phase parameters
+        peak_height_list : list
+            A list of intensity values used to update the intensity of each peak.
+        unpack_count : int
+            The number of unpacking iterations to perform for each peak.
+        num_of_dimensions : int
+            The number of dimensions to consider when updating the peaks.
 
         Returns
         -------
-        list[Peak]
-            List of valid peaks
+        None
         """
-        file_lines : list[str] = [] # List of each line in file as a string
-        with self.file.open('r') as f:
-            file_lines = f.readlines()
+        peak_count : int = len(self.peaks)
 
-        attribute_keys : list[str] = []     # Attribute variable names
-        attribute_formats : list[str] = []  # Attribute format values
-        peaks : list[Peak] = []             # List of peaks 
+        phase_offset : int = 2 * peak_count
 
-        # ----------------------------- Header Processing ---------------------------- #
+        if unpack_count > 1:
+            for peak in self.peaks:
+                peak.expand_linewidth(unpack_count)
+                peak.expand_phase(unpack_count)
+                
+        # Update peaks with current parameters
+        for i, peak in enumerate(self.peaks):
+            for p in range(unpack_count):
+                for j in range(num_of_dimensions):
+                    lw_index : int = i + (j * peak_count) + (2 * p * peak_count)
+                    peak.linewidth[p][j].pts = decay_list[lw_index]
+                    
+                    p0_index : int = i + (j * phase_offset) + (2 * p * phase_offset)
+                    p1_index : int = peak_count + i + (j * phase_offset) + (2 * p * phase_offset)
+                    peak.phase[p][j].p0 = phase_list[p0_index]
+                    peak.phase[p][j].p1 = phase_list[p1_index]
+                    
+            peak.intensity = peak_height_list[i]
 
-        line_number = 0          # Current line of the file
-        is_header_read = False  # Whether the header has been read completely or not
-
-        # Iterate through each line and ensure that information
-        # Goes to the right property
-        while not is_header_read and file_lines:
-            line = file_lines[0]
-
-            # Exit at the end of the file
-            if not line:
-                break
-            
-            # Increment line number
-            line_number += 1 
-            # Remove whitespace
-            line = line.strip()
-
-            # Only continue if the line isn't empty
-            if not line:
-                del file_lines[0]
-                continue
-
-            if line.upper().startswith("REMARK") or line.upper().startswith("#"):
-                # Collect remarks into a single string
-                self.remarks += re.sub("(REMARK|#)( )+", "", line, flags=re.IGNORECASE) + "\n"
-                del file_lines[0]
-            elif line.upper().startswith("VARS"):
-                # Collect variable names
-                attributes_string = re.sub("VARS( )+", "", line, flags=re.IGNORECASE)
-                attribute_keys = re.split(r"[,|\s]+", attributes_string)
-                del file_lines[0]
-            elif line.upper().startswith("FORMAT"):
-                # Collect matching variable formats
-                formats_string = re.sub("FORMAT( )+", "", line, flags=re.IGNORECASE).lstrip("%")
-                attribute_formats = re.split(r"[,|\s]+%", formats_string)
-                del file_lines[0]
-            elif line.upper().startswith("NULLSTRING"):
-                self._null_string = re.sub("NULLSTRING( )+", "", line, flags=re.IGNORECASE)
-                del file_lines[0]
-            elif line.upper().startswith("DATA"):
-                self.remarks += re.sub("(DATA|#)( )+", "", line, flags=re.IGNORECASE) + "\n"
-                del file_lines[0]
-            elif line.upper().startswith("NULLVALUE"):
-                self._null_value = int(re.sub("NULLVALUE( )+", "", line, re.IGNORECASE))
-                del file_lines[0]
-            else:
-                # If the line doesn't match header keywords, assume it's data and exit loop
-                is_header_read = True
-
-        # Ensure equal attribute variables and formats to match
-        if (attribute_keys and attribute_formats) and len(attribute_keys) == len(attribute_formats):
-            # Generate attribute dictionary
-            self.attributes = dict(
-                map(lambda key,value : (key,value), attribute_keys, attribute_formats))
-
-        # // For debugging
-        # errPrint(f"Header Length: {line_number}")
-
-        while file_lines:
-            line_number += 1
-            # Convert the string to a peak and add it to the list
-            new_peak = string_to_peak(
-                    file_lines.pop(0), self.attributes, self.file, line_number,
-                    (self._spectral_widths, self._coordinate_origins,
-                     self._observation_freqs, self._total_freq_points))
-            
-            if new_peak:  
-                peaks.append(new_peak)  
-
-        return peaks
+        if weights is None or len(weights) == 0:
+            return
+        
+        for i, peak in enumerate(self.peaks):
+            for p in range(unpack_count - 1):
+                for j in range(num_of_dimensions):
+                    if peak.weights is not None:
+                        weight_index : int = i + (j * peak_count) + (2 * p * peak_count)
+                        peak.weights[p][j] = weights[weight_index]
     
     # ---------------------------------------------------------------------------- #
-    #                             Peak Table Management                            #
+    #                              Getters and Setters                             #
     # ---------------------------------------------------------------------------- #
 
-    def set_peak_phases(self, phases_list : list[Annotated[list[Phase], 2]]):
-        if len(phases_list) != len(self.peaks):
-            raise ValueError("The amount of phase pairs must be equal to the number of peaks in the spectrum.")
+    # ----------------------------------- File ----------------------------------- #
+    
+    @property
+    def file(self) -> Path | str:
+        return self._file
+    
+    @file.setter
+    def file(self, file: File) -> None:
+        if type(file) == str:
+            peak_table_file = Path(file)
+        else:
+            peak_table_file = file
+        if isinstance(peak_table_file, Path) and not peak_table_file.exists():
+            raise IOError(f"Unable to find file: {peak_table_file}")
+        self._file = peak_table_file
+        peaks, remarks, null_string, null_value, attributes = load_peak_table(file, 
+                                                                        self._spectral_widths, self._coordinate_origins,
+                                                                        self._observation_frequencies,
+                                                                        self._total_frequency_points)
+        self._peaks = peaks
+        self._remarks = remarks
+        self._attributes = attributes
+        self._null_string = null_string
+        self._null_value = null_value
         
-        for i, phase in enumerate(phases_list):
-            if len(phase) != 2:
-                raise ValueError(f"Peak #{i+1} must have a phase for x-axis and y-axis (currently {len(phase)}).")
-            self.peaks[i].phase = phase
+    # ----------------------------------- Peaks ---------------------------------- #
 
+    @property
+    def peaks(self) -> list[Peak]:
+        return self._peaks
+    
+    @peaks.setter
+    def peaks(self, peaks: list[Peak]) -> None:
+        if not isinstance(peaks, list):
+            raise TypeError("Peaks must be a list of Peak objects.")
+        self._peaks = peaks
+
+    # -------------------------------- Remarks ---------------------------------- #
+
+    @property
+    def remarks(self) -> str:
+        return self._remarks
+    
+    @remarks.setter
+    def remarks(self, remarks: str) -> None:
+        if not isinstance(remarks, str):
+            raise TypeError("Remarks must be a string.")
+        self._remarks = remarks
+
+    # ------------------------------- Attributes -------------------------------- #
+    
+    @property
+    def attributes(self) -> dict[str, str]:
+        return self._attributes
+    
+    @attributes.setter
+    def attributes(self, attributes: dict[str, str]) -> None:
+        if not isinstance(attributes, dict):
+            raise TypeError("Attributes must be a dictionary.")
+        self._attributes = attributes
+
+    # -------------------------------- Null String ------------------------------- #
+
+    @property
+    def null_string(self) -> str:
+        return self._null_string
+    
+    @null_string.setter
+    def null_string(self, null_string: str) -> None:
+        if not isinstance(null_string, str):
+            raise TypeError("Null string must be a string.")
+        self._null_string = null_string
+
+    # -------------------------------- Null Value -------------------------------- #
+
+    @property
+    def null_value(self) -> float:
+        return self._null_value
+    
+    @null_value.setter
+    def null_value(self, null_value: float) -> None:
+        if not isinstance(null_value, (int, float)):
+            raise TypeError("Null value must be an integer or float.")
+        self._null_value = null_value
+    
     # ---------------------------------------------------------------------------- #
     #                                 Magic Methods                                #
     # ---------------------------------------------------------------------------- #
 
-    def __repr__(self):
-        if not self.remarks:
-            remarks = "None"
-        else:
-            remarks = self.remarks
-        return f"Spectrum({len(self.peaks)} peaks, " \
-               f"file={self.file}, " \
-               f"remarks={remarks}, " \
-               f"attributes={self.attributes}, " \
-               f"spectral_widths={self._spectral_widths}, " \
-               f"coordinate_origins={self._coordinate_origins}, " \
-               f"observation_freqs={self._observation_freqs}, " \
-               f"total_time_points={self._total_time_points}, " \
-               f"total_freq_points={self._total_freq_points}, " \
-               f"verbose={self.verbose})"
-
-# ---------------------------------------------------------------------------- #
-#                               Helper Functions                               #
-# ---------------------------------------------------------------------------- #
-def string_to_peak(peak_string : str,
-                   attribute_dict : dict[str,str], 
-                   file_name : Path, 
-                   line_number : int,
-                   spectral_features : tuple[tuple[float, float], 
-                                             tuple[float, float], 
-                                             tuple[float, float],
-                                             tuple[  int,   int]]) -> Peak | None:
-    """
-    Convert a string of data into a peak class object.
-    Utilizes the attribute dictionary for accurate datatype conversion.
-
-    Parameters
-    ----------
-    peak_string : str
-        String of separated values to comprise the peak
-    attribute_dict : dict[str,str]
-        Dictionary of all the peak attributes and their datatypes
-    file : Path
-        Original file from which data was read for debugging purposes
-    line_number : int
-        Line number the data originates from for debugging purposes
-
-    Returns
-    -------
-    Peak | None
-        New peak container based on string data input if created
-    """
-    peak_data = re.split(r"[,|\s]+", peak_string.strip())
-
-    # If line is empty do not return a peak
-    if len(peak_data) == 1 and not peak_data[0]:
-        return None
+    def __repr__(self) -> str:
+        return f"Spectrum(file={self._file}, spectral_widths={self._spectral_widths}, " \
+               f"coordinate_origins={self._coordinate_origins}, observation_frequencies={self._observation_frequencies}, " \
+               f"total_frequency_points={self._total_frequency_points}, peaks={self._peaks})"
     
-    # Ensure that there is enough data for the keys
-    if len(attribute_dict) > len(peak_data):
-        raise Exception(f"An exception occured reading line {line_number} of the file: {file_name}\nMore VARS than provided data.")
-
-    # Change data to correct datatype
-    corrected_peak_data = list(map(format_to_datatype, peak_data, attribute_dict.values()))
-
-    # Create the final dictionary
-    data = dict(map(lambda key,value : (key,value), attribute_dict.keys(), corrected_peak_data))
+    def __str__(self) -> str:
+        return f"Spectrum File: {self._file}\n" \
+               f"Spectral Widths: {self._spectral_widths}\n" \
+               f"Coordinate Origins: {self._coordinate_origins}\n" \
+               f"Observation Frequencies: {self._observation_frequencies}\n" \
+               f"Total Frequency Points: {self._total_frequency_points}\n" \
+               f"Peaks: {len(self._peaks)} peaks\n" \
+               f"Remarks: {self._remarks}\n" \
+               f"Attributes: {self._attributes}\n" \
+               f"Null String: {self._null_string}\n" \
+               f"Null Value: {self._null_value}\n" \
+               f"Verbose: {self.verbose}\n"
     
-    # Initialize x coordinate based on spectral information
-    x_coord = Coordinate(data["X_AXIS"], 
-                         spectral_features[0][0], spectral_features[1][0],
-                         spectral_features[2][0], spectral_features[3][0])
-    
-    # Initialize y coordinate based on spectral information
-    y_coord = Coordinate(data["Y_AXIS"], 
-                         spectral_features[0][1], spectral_features[1][1],
-                         spectral_features[2][1], spectral_features[3][1])
-    
-    # Collect x-coordinate and y-coordinate to represent peak position
-    peakPosition = Coordinate2D(data["INDEX"], x_coord, y_coord)
+    def __deepcopy__(self, memo) -> "Spectrum":
+        """
+        Creates a deep copy of the current Spectrum object.
 
-    x_linewidth = Coordinate(data["XW"],
-                             spectral_features[0][0], spectral_features[1][0],
-                             spectral_features[2][0], spectral_features[3][0])
+        Returns
+        -------
+        Spectrum
+            A new Spectrum object with the same attributes as the current one.
+        """
 
-    y_linewidth = Coordinate(data["YW"],
-                             spectral_features[0][1], spectral_features[1][1],
-                             spectral_features[2][1], spectral_features[3][1])
+        new_spectrum = Spectrum(
+            file=self._file,
+            spectral_widths=deepcopy(self._spectral_widths),
+            coordinate_origins=deepcopy(self._coordinate_origins),
+            observation_frequencies=deepcopy(self._observation_frequencies),
+            total_time_points=deepcopy(self._total_time_points),
+            total_frequency_points=deepcopy(self._total_frequency_points),
+            verbose=self.verbose
+        )
+        new_spectrum.peaks = deepcopy(self._peaks)
+        new_spectrum.remarks = deepcopy(self._remarks)
+        new_spectrum.attributes = deepcopy(self._attributes)
+        new_spectrum.null_string = deepcopy(self._null_string)
+        new_spectrum.null_value = deepcopy(self._null_value)
 
-    linewidths = Coordinate2D(data["INDEX"], x_linewidth, y_linewidth)
-
-    # Check for x and y cosine couplings if they exist
-    x_cos_couplings = [coupl for coupl in data if re.fullmatch(r'X_COSJ\d+', coupl)]
-    y_cos_couplings = [coupl for coupl in data if re.fullmatch(r'Y_COSJ\d+', coupl)]
-
-    # Check for x and y sine couplings if they exist
-    x_sin_couplings = [coupl for coupl in data if re.fullmatch(r'X_SINJ\d+', coupl)]
-    y_sin_couplings = [coupl for coupl in data if re.fullmatch(r'Y_SINJ\d+', coupl)]
-
-    x_cosj : list[float] = [] # X-axis cosine j-couplings
-    y_cosj : list[float] = [] # Y-axis cosine j-couplings
-    x_sinj : list[float] = [] # X-axis sine j-couplings
-    y_sinj : list[float] = [] # Y-axis sine j-couplings
-
-    if x_cos_couplings:
-        for x_cos_key in x_cos_couplings:
-            x_cosj.append(data[x_cos_key])
-    if y_cos_couplings:
-        for y_cos_key in y_cos_couplings:
-            y_cosj.append(data[y_cos_key])
-    if x_sin_couplings:
-        for x_sin_key in x_sin_couplings:
-            x_sinj.append(data[x_sin_key])
-    if y_sin_couplings:
-        for y_sin_key in y_sin_couplings:
-            y_sinj.append(data[y_sin_key])
-
-    extra_params = {'X_COSJ':x_cosj, 'Y_COSJ':y_cosj, 
-                    'X_SINJ':x_sinj, 'Y_SINJ':y_sinj}
-
-    # Return peak with position, intensity, and linewidth
-    return Peak(peakPosition, data["HEIGHT"], linewidths, 
-                extra_params=extra_params)
-
-def format_to_datatype(data : str, format : str):
-    """
-    Convert data represented by a string into its correct format using
-    the provided format string.
-
-    Parameters
-    ----------
-    data : str
-        The data to be converted.
-    format : str
-        The format string indicating the desired data type.
-
-    Returns
-    -------
-    any
-        The data converted to the appropriate type.
-    """
-    if ('f' in format.lower()) or ('e' in format.lower()):
-        return float(re.sub("[A-DF-Za-df-z]", "", data))
-    elif ('d' in format.lower()) or ('i' in format.lower()):
-        return int(re.sub("[A-DF-Za-df-z]", "", data))
-    if ('s' in format.lower()) or ('c' in format.lower()):
-        return data
-    return data
-    
+        return new_spectrum
