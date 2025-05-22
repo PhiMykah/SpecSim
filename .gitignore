@@ -8,8 +8,8 @@ debug/*
 *.tar
 *.c
 simulated_data_*.png
-testing*
-test*
+*/tests/data/*/*.f*
+*/tests/data/basis
 
 # ---------------------------------------------------------------------------- #
 #                                    Python                                    #

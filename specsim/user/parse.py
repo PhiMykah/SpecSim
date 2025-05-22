@@ -1,10 +1,13 @@
+import nmrPype as pype
+from ..datatypes import Vector
+
 import sys
 import argparse
 from random import randint
 import nmrPype as pype
 
-def parse_command_line(argument_list : str) -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description='specsim: simulate NMR spectral simulator')
+def parse_command_line(argument_list : str | list) -> argparse.Namespace :
+    parser = argparse.ArgumentParser(description='specsim : simulate NMR spectral simulator')
     parser.add_argument('-tab', type=str, default='master.tab', help='Peak Table Input.') #
     parser.add_argument('-fid', type=str, default='test.fid', help='NMRPipe-format Time-Domain Input.') #
     parser.add_argument('-ft1', type=str, default='test.ft1', help='Corresponding NMRPipe-format Interferogram Input.') #
@@ -13,7 +16,7 @@ def parse_command_line(argument_list : str) -> argparse.Namespace:
     parser.add_argument('-out', type=str, default=None, help='NMRPipe-format Time-Domain Output, or Keyword None.') #
     parser.add_argument('-basis', type=str, default=None, metavar='FILEPATH', help='Save Each Peak in a Basis Set, Designate the Folder Path.')
     parser.add_argument('-res', type=str, default=None, help='NMRPipe-format Time-Domain Residual, or Keyword None.')
-    parser.add_argument('-scale', type=float, default=1.0, help="Amplitude Scaling Factor") #
+    parser.add_argument('-scale', type=float, nargs='+', default=[1.0, 1.0], help="Amplitude Scaling Factors (list of floats)") #
     parser.add_argument('-rx1', type=int, default=0, help='First Point Location for Calculating Residual.')
     parser.add_argument('-rxn', type=int, default=0, help='Last Point Location for Calculating Residual.')
     parser.add_argument('-mode', type=str, choices=['lsq', 'basin', 'minimize', 'brute'], default='lsq', help='Optimization mode (lsq, basin, minimize, brute).') #
@@ -24,6 +27,7 @@ def parse_command_line(argument_list : str) -> argparse.Namespace:
     parser.add_argument('-noverb', "-noverbose", action='store_true', help='Verbose Mode OFF.') #
     parser.add_argument('-report', action='store_true', help='Report Mode ON.')
     parser.add_argument('-freq', type=float, nargs='+', default=None, help='Frequency Positions (list of floats).')
+    parser.add_argument('-model', type=str, choices=['exp', 'gauss', 'comp'], default='exp', help='Optimization mode (exponential, gaussian, composite).')
     parser.add_argument('-initXDecay', '-initDecay', type=float, nargs='+', default=[2.0], help='Initial x-axis decay values in Hz (list of floats, one for each model).')
     parser.add_argument('-initYDecay', type=float, nargs='+', default=[0.0], help='Initial y-axis decay values in Hz (list of floats, one for each model).')
     parser.add_argument('-xDecayBounds', type=float, nargs=2, default=[0.0, 100.0], metavar=('LOWER', 'HIGHER'), help='Lower and upper bounds for x-decay in Hz.')
@@ -36,7 +40,7 @@ def parse_command_line(argument_list : str) -> argparse.Namespace:
     parser.add_argument('-eAmp', type=str, default='Auto', help='Exponential Amplitudes, or Keyword Auto.')
     parser.add_argument('-gDecay', type=str, default=None, help='Gaussian Decays (Pts Hz ppm %%).')
     parser.add_argument('-gAmp', type=str, default='Auto', help='Gaussian Amplitudes, or Keyword Auto.')
-    parser.add_argument('-xOff', type=float, default=0.0, help="Optional Frequency offset value in pts.") #
+    parser.add_argument('-off', type=float, nargs='+', default=[0.0, 0.0], help="Optional Frequency offset value in pts. (list of floats)") #
     parser.add_argument('-j1', type=str, default=None, help='Coupling 1 (Cosine Modulation, Pts Hz ppm %%).')
     parser.add_argument('-j2', type=str, default=None, help='Coupling 2 (Cosine Modulation, Pts Hz ppm %%).')
     parser.add_argument('-j3', type=str, default=None, help='Coupling 3 (Cosine Modulation, Pts Hz ppm %%).')
@@ -55,9 +59,9 @@ def parse_command_line(argument_list : str) -> argparse.Namespace:
 
     return parser.parse_args(argument_list)
 
-def get_dimension_info(data_frame: pype.DataFrame, data_type : str) -> tuple[float, float]:
+def get_dimension_info(data_frame : pype.DataFrame, data_type : str, dimension_count : int = 2) -> Vector[float]:
     """
-    Obtain x-dimension and y-dimension information from the data frame.
+    Obtain each dimension information from the data frame.
 
     Parameters
     ----------
@@ -65,15 +69,20 @@ def get_dimension_info(data_frame: pype.DataFrame, data_type : str) -> tuple[flo
         Target data frame
     data_type : str
         Header key for the data frame
-
+    dimension_count : int
+        Number of dimensions to collect information from
     Returns
     -------
-    tuple[float, float]
-        x-dimension and y-dimension values
+    Vector[float]
+        Value for each dimension
     """
-    return (data_frame.getParam(data_type, 1), data_frame.getParam(data_type, 2))
+    data : list[float] = []
+    for i in range(dimension_count):
+        data.append(data_frame.getParam(data_type, i+1))
 
-def get_total_size(data_frame : pype.DataFrame, header_key : str) -> tuple[int, int]:
+    return Vector(data)
+
+def get_total_size(data_frame : pype.DataFrame, header_key : str, dimension_count : int = 2) -> Vector[int]:
     """
     Obtain the total size of the data frame.
 
@@ -81,18 +90,23 @@ def get_total_size(data_frame : pype.DataFrame, header_key : str) -> tuple[int, 
     ----------
     data_frame : nmrPype.DataFrame
         Target data frame
-
     header_key : str
         NMR Header key for size
+    dimension_count : int
+        Number of dimensions to collect information from
 
     Returns
     -------
-    tuple[int, int]
+    Vector[int]
         Total size of the data frame
     """
-    return tuple(map(int, get_dimension_info(data_frame, header_key)))
+    data : list[int] = []
+    for i in range(dimension_count):
+        data.append(int(data_frame.getParam(header_key, i+1)))
 
-class SpecSimArgs:
+    return Vector(data)
+
+class SpecSimArgs :
     """
     A class to parse and store command-line arguments for spectral simulation.
 
@@ -134,6 +148,8 @@ class SpecSimArgs:
         Path to the report file.
     freq : float
         Frequency of the simulation.
+    model : str
+        Simulation Model for the simulation
     initXDecay : float
         Initial x-axis decay value in Hz for each model.
     initYDecay : float
@@ -193,56 +209,57 @@ class SpecSimArgs:
     notdj : bool
         No time-domain J-coupling flag.
     """
-    def __init__(self, args: argparse.Namespace):
-        self.tab: str = args.tab
-        self.fid: str = args.fid
+    def __init__(self, args : argparse.Namespace) -> None :
+        self.tab : str = args.tab
+        self.fid : str = args.fid
         self.ft1: str = args.ft1
         self.ft2: str = args.ft2
-        self.apod: str = args.apod
-        self.out: str = args.out
-        self.basis: str = args.basis
-        self.res: str = args.res
-        self.scale: float = args.scale
+        self.apod : str = args.apod
+        self.out : str = args.out
+        self.basis : str = args.basis
+        self.res : str = args.res
+        self.scale : list[float] = args.scale
         self.rx1: int = args.rx1
-        self.rxn: int = args.rxn
-        self.mode: str = args.mode
-        self.trials: int = args.trials
-        self.maxFail: int = args.maxFail
-        self.iseed: int = args.iseed
-        self.verb: bool = args.verb
-        self.noverb: bool = args.noverb
-        self.report: bool = args.report
-        self.freq: list[float] = args.freq
+        self.rxn : int = args.rxn
+        self.mode : str = args.mode
+        self.trials : int = args.trials
+        self.maxFail : int = args.maxFail
+        self.iseed : int = args.iseed
+        self.verb : bool = args.verb
+        self.noverb : bool = args.noverb
+        self.report : bool = args.report
+        self.freq : list[float] = args.freq
+        self.model : str = args.model
         self.initXDecay : list[float] = args.initXDecay
         self.initYDecay : list[float] = args.initYDecay
-        self.xDecayBounds: list[float] = args.xDecayBounds
-        self.yDecayBounds: list[float] = args.yDecayBounds
-        self.ampBounds: list[float] = args.ampBounds
-        self.p0Bounds: list[float] = args.p0Bounds
-        self.p1Bounds: list[float] = args.p1Bounds
-        self.step: float = args.step
-        self.eDecay: list[float] = args.eDecay
-        self.eAmp: str = args.eAmp
-        self.gDecay: str = args.gDecay
-        self.gAmp: str = args.gAmp
-        self.xOff: float = args.xOff
-        self.j1: str = args.j1
-        self.j2: str = args.j2
-        self.j3: str = args.j3
+        self.xDecayBounds : list[float] = args.xDecayBounds
+        self.yDecayBounds : list[float] = args.yDecayBounds
+        self.ampBounds : list[float] = args.ampBounds
+        self.p0Bounds : list[float] = args.p0Bounds
+        self.p1Bounds : list[float] = args.p1Bounds
+        self.step : float = args.step
+        self.eDecay : list[float] = args.eDecay
+        self.eAmp : str = args.eAmp
+        self.gDecay : str = args.gDecay
+        self.gAmp : str = args.gAmp
+        self.offsets : float = args.off
+        self.j1 : str = args.j1
+        self.j2 : str = args.j2
+        self.j3 : str = args.j3
         self.xP0: list[float] = args.xP0
         self.xP1: list[float] = args.xP1
         self.yP0: list[float] = args.yP0
         self.yP1: list[float] = args.yP1
-        self.ePhase: float = args.ePhase
-        self.gPhase: float = args.gPhase
-        self.ts: bool = args.ts
-        self.nots: bool = args.nots
-        self.notdd: bool = args.notdd
-        self.tdd: bool = args.tdd
-        self.tdj: bool = args.tdj
-        self.notdj: bool = args.notdj
+        self.ePhase : float = args.ePhase
+        self.gPhase : float = args.gPhase
+        self.ts : bool = args.ts
+        self.nots : bool = args.nots
+        self.notdd : bool = args.notdd
+        self.tdd : bool = args.tdd
+        self.tdj : bool = args.tdj
+        self.notdj : bool = args.notdj
 
-    def __str__(self):
+    def __str__(self) -> str :
         return (f"SpecSimArgs(tab={self.tab}, fid={self.fid}, ft1={self.ft1}, ft2={self.ft2}, apod={self.apod}, out={self.out}, "
                 f"res={self.res}, scale={self.scale}, rx1={self.rx1}, rxn={self.rxn}, mode={self.mode}, trials={self.trials}, "
                 f"maxFail={self.maxFail}, iseed={self.iseed}, verb={self.verb}, noverb={self.noverb}, "
@@ -250,12 +267,12 @@ class SpecSimArgs:
                 f"xDecayBounds={self.xDecayBounds}, yDecayBounds={self.yDecayBounds}, "
                 f"ampBounds={self.ampBounds}, p0Bounds={self.p0Bounds}, p1Bounds={self.p1Bounds}, step={self.step}, "
                 f"eDecay={self.eDecay}, eAmp={self.eAmp}, gDecay={self.gDecay}, gAmp={self.gAmp}, "
-                f"xOff={self.xOff}, j1={self.j1}, j2={self.j2}, j3={self.j3}, "
+                f"offsets={self.offsets}, j1={self.j1}, j2={self.j2}, j3={self.j3}, "
                 f"xP0={self.xP0}, xP1={self.xP1}, yP0={self.yP0}, yP1={self.yP1}, ePhase={self.ePhase}, gPhase={self.gPhase}, "
                 f"ts={self.ts}, nots={self.nots}, notdd={self.notdd}, tdd={self.tdd}, tdj={self.tdj}, "
                 f"notdj={self.notdj})")
-        
+
 if __name__ == "__main__":
-    args = parse_command_line(sys.argv[1:])
+    args : argparse.Namespace = parse_command_line(sys.argv[1:])
     specsim_args = SpecSimArgs(args)
     print(specsim_args)

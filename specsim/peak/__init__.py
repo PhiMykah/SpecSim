@@ -1,4 +1,2 @@
 from .peak import Peak
-from .coordinate import Coordinate
-from .coordinate import Coordinate2D
-from .coordinate import Phase
+from .peak_table import load_peak_table
