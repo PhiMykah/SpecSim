@@ -23,6 +23,13 @@ from specsim.optimization.optimize import OptMethod, get_optimization_method
 from specsim.optimization.params import OptimizationParams
 
 # ---------------------------------------------------------------------------- #
+#                                Error Printing                                #
+# ---------------------------------------------------------------------------- #
+
+def errPrint(*args, **kwargs) -> None:
+    print(*args, file=sys.stderr, **kwargs)
+
+# ---------------------------------------------------------------------------- #
 #                                     Main                                     #
 # ---------------------------------------------------------------------------- #
 
@@ -35,6 +42,8 @@ def main() -> int:
     data_fid = pype.DataFrame(cmd_args.fid)  # Full time-domain nmrpype format data
     output_file : str = cmd_args.out # Output file nmrpype format data
 
+    num_of_dimensions = cmd_args.ndim
+
     # Set domain and output file based on whether one is included
     file_domain : str = "ft1"                                                  # Domain of simulation data
     if output_file != None:
@@ -43,9 +52,9 @@ def main() -> int:
         output_dir.mkdir(parents=True, exist_ok=True) # Make folders for file if they don't exist
 
         if suffix:
-            file_domain= suffix                                 # Domain of simulation data    
+            file_domain = suffix                                 # Domain of simulation data    
     else:
-        output_file = f"test_sim.{domain}"
+        output_file = f"sim.{domain}"
     
     match file_domain:
         case "fid":
@@ -66,12 +75,11 @@ def main() -> int:
 
     # --------------------------- Simulation Parameters -------------------------- #
 
-    axis_count = 2
-    spectral_widths: Vector[float] = get_dimension_info(data_frame, 'NDSW')
-    origins: Vector[float] = get_dimension_info(data_frame, 'NDORIG')
-    observation_frequencies: Vector[float] = get_dimension_info(data_frame, "NDOBS")
-    total_time_points: Vector[int] = get_total_size(data_frame, 'NDTDSIZE')
-    total_freq_points: Vector[int] = get_total_size(data_frame, 'NDFTSIZE')
+    spectral_widths: Vector[float] = get_dimension_info(data_frame, 'NDSW', num_of_dimensions)
+    origins: Vector[float] = get_dimension_info(data_frame, 'NDORIG', num_of_dimensions)
+    observation_frequencies: Vector[float] = get_dimension_info(data_frame, "NDOBS", num_of_dimensions)
+    total_time_points: Vector[int] = get_total_size(data_frame, 'NDTDSIZE', num_of_dimensions)
+    total_freq_points: Vector[int] = get_total_size(data_frame, 'NDFTSIZE', num_of_dimensions)
     
     xPhase : list[Phase] = [Phase(p0, p1) for p0, p1 in zip_longest(cmd_args.xP0,
                                                       cmd_args.xP1, 
@@ -88,9 +96,15 @@ def main() -> int:
     # Create a list of vectors where each element is a vector with x and y phases
     phases: list[Vector[Phase]] = [Vector([x, y]) for x, y in zip(xPhase, yPhase)]
 
+    # Ensure scaling_factors and offsets have vector length num_of_dimensions
+    while len(cmd_args.scale) < num_of_dimensions:
+        cmd_args.scale.append(1.0)  # Default scaling factor is 1.0
+    while len(cmd_args.offsets) < num_of_dimensions:
+        cmd_args.offsets.append(0.0)  # Default offset is 0.0
+
     scaling_factors: Vector[float] = Vector(cmd_args.scale) # Time domain x and y scaling values
     offsets : Vector[float] = Vector(cmd_args.offsets) # Frequency x and y offset for simulation                             
-    constant_time_region_sizes : Vector[int] = Vector(0, 0) # Size of x and y constant time regions
+    constant_time_region_sizes : Vector[int] = Vector([0] * num_of_dimensions) # Size of x and y constant time regions
     peaks_simulated = 0 # Number of peaks to simulate (0 for all)
 
     # Use verbose if both flags are used
@@ -106,7 +120,7 @@ def main() -> int:
         errPrint(f"Observation Frequencies: {observation_frequencies}")
         errPrint(f"Total Time Points: {total_time_points}")
         errPrint(f"Total Frequency Points: {total_freq_points}")
-        errPrint(f"Phases: X-{phases[0]} | Y-{phases[1]}")
+        errPrint(f"Phases: {phases}")
         errPrint(f"Scaling Factors: {scaling_factors}")
         errPrint(f"Offsets: {offsets}")
         errPrint(f"Constant Time Region Sizes: {constant_time_region_sizes}")
@@ -150,7 +164,7 @@ def main() -> int:
     output_df.setArray(simulated_data)
 
     # Format output file path
-    output_file_path : str = str(Path(output_file).with_suffix('')) + f"_{get_simulation_model(cmd_args.model).value[2]}" + f".{domain}"
+    output_file_path : str = str(Path(output_file).with_suffix('')) + f"_{get_simulation_model(cmd_args.model).value[2]}" + f".{domain.to_string()}"
         
     pype.write_to_file(output_df, output_file_path, True)
 
@@ -167,13 +181,13 @@ def main() -> int:
                       cmd_args.initYDecay, fillvalue=0)]                                # Initial decay values for optimization
     xDecayBounds : tuple[float,float] = (cmd_args.xDecayBounds[0], cmd_args.xDecayBounds[1])
     yDecayBounds : tuple[float,float] = (cmd_args.yDecayBounds[0], cmd_args.yDecayBounds[1])
-    decay_bounds: list[Vector[tuple[float, float]]] = [Vector(xDecayBounds, yDecayBounds)]  # Bounds of x-decays in simulation optimization                       # Bounds of y-decays in simulation optimization
-    
+    decay_bounds: list[Vector[tuple[float, float]]] = [Vector(xDecayBounds, yDecayBounds)]  # Bounds of decays in simulation optimization         
+
     # Ensure the lengths of decay_bounds, initial_decay, and phases are the same
     max_length = max(len(decay_bounds), len(initial_decay), len(phases))
 
     # Extend each list to match the maximum length
-    decay_bounds.extend([Vector((0.0, 0.0), (0.0, 0.0))] * (max_length - len(decay_bounds)))
+    decay_bounds.extend([decay_bounds[0]] * (max_length - len(decay_bounds)))
     initial_decay.extend([Vector(0.0, 0.0)] * (max_length - len(initial_decay)))
     phases.extend([Vector([Phase(0, 0), Phase(0, 0)])] * (max_length - len(phases)))
 
@@ -226,7 +240,7 @@ def main() -> int:
     # Save gaussian decay data using existing dataframe as base
     optimized_output.setArray(new_spectrum_data)
 
-    output_file_path = str(Path(output_file).with_suffix('')) + f"_{get_simulation_model(cmd_args.model).value[2]}" + "_optimized" + f".{domain.to_string}"
+    output_file_path = str(Path(output_file).with_suffix('')) + f"_{get_simulation_model(cmd_args.model).value[2]}" + "_optimized" + f".{domain.to_string()}"
     
     pype.write_to_file(optimized_output, output_file_path, True)
 
@@ -242,10 +256,3 @@ if __name__ == '__main__':
     except Exception as e:
         print(f"Error: {e}")
         sys.exit(1)
-
-# ---------------------------------------------------------------------------- #
-#                                Error Printing                                #
-# ---------------------------------------------------------------------------- #
-
-def errPrint(*args, **kwargs) -> None:
-    print(*args, file=sys.stderr, **kwargs)

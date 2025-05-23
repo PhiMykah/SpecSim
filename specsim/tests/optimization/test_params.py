@@ -6,9 +6,12 @@ def test_init_with_defaults() -> None:
     params = OptimizationParams(num_of_dimensions=2)
     assert params.trials == 100
     assert params.step_size == 0.1
-    assert isinstance(params.initial_decay, Vector)
-    assert isinstance(params.initial_phase, Vector)
-    assert isinstance(params.bounds, Vector)
+    assert isinstance(params.initial_decay, list)
+    assert all(isinstance(item, Vector) for item in params.initial_decay)
+    assert isinstance(params.initial_phase, list)
+    assert all(isinstance(item, Vector) for item in params.initial_phase)
+    assert isinstance(params.bounds, list)
+    assert all(isinstance(item, Vector) for item in params.bounds)
     assert params.amplitude_bounds == (0.0, 10.0)
     assert params.p0_bounds == (-180.0, 180.0)
     assert params.p1_bounds == (-180.0, 180.0)
@@ -42,7 +45,7 @@ def test_step_size_setter() -> None:
 def test_initial_decay_custom_and_type() -> None:
     v = Vector([2.0, 1.0])
     params = OptimizationParams(2, initial_decay=v)
-    assert params.initial_decay == v
+    assert params.initial_decay == [v]
     with pytest.raises(TypeError):
         OptimizationParams(2, initial_decay="not_a_vector") # type: ignore
     with pytest.raises(ValueError):
@@ -51,7 +54,7 @@ def test_initial_decay_custom_and_type() -> None:
 def test_initial_phase_custom_and_type() -> None:
     v = Vector([Phase(0.0, 0.0), Phase(1.0, 1.0)])
     params = OptimizationParams(2, initial_phase=v)
-    assert params.initial_phase == v
+    assert params.initial_phase == [v]
     with pytest.raises(TypeError):
         OptimizationParams(2, initial_phase="not_a_vector") # type: ignore
     with pytest.raises(ValueError):
@@ -61,7 +64,7 @@ def test_bounds_custom_and_type() -> None:
     bounds_pair: list[tuple]  = [(0.0, 10.0), (0.0, 20.0)]
     v = Vector(bounds_pair)
     params = OptimizationParams(2, bounds=v)
-    assert params.bounds == v
+    assert params.bounds == [v]
     with pytest.raises(TypeError):
         OptimizationParams(2, bounds="not_a_vector") # type: ignore
     with pytest.raises(ValueError):

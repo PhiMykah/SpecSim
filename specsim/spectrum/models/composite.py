@@ -57,10 +57,10 @@ def sim_composite_1D(
         The simulated 1D NMR spectrum
     """
     if len(linewidths) < 2:
-        print("Warning: Less than 2 linewidths provided for composite simulation. Duplicating the first value.", file=stderr)
+        # print("Warning: Less than 2 linewidths provided for composite simulation. Duplicating the first value.", file=stderr)
         linewidths = [linewidths[0]] * 2
     if len(phases) < 2:
-        print("Warning: Less than 2 phases provided for composite simulation. Duplicating the first value.", file=stderr)
+        # print("Warning: Less than 2 phases provided for composite simulation. Duplicating the first value.", file=stderr)
         phases = [phases[0]] * 2
     
     # Calculate exponential

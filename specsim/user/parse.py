@@ -15,6 +15,7 @@ def parse_command_line(argument_list : str | list) -> argparse.Namespace :
     parser.add_argument('-apod', type=str, default=None, help='Optional NMRPipe-format Apodization Profile.')
     parser.add_argument('-out', type=str, default=None, help='NMRPipe-format Time-Domain Output, or Keyword None.') #
     parser.add_argument('-basis', type=str, default=None, metavar='FILEPATH', help='Save Each Peak in a Basis Set, Designate the Folder Path.')
+    parser.add_argument('-ndim', type=int, default=2, help='Number of dimensions to simulate (integer, by default 2)')
     parser.add_argument('-res', type=str, default=None, help='NMRPipe-format Time-Domain Residual, or Keyword None.')
     parser.add_argument('-scale', type=float, nargs='+', default=[1.0, 1.0], help="Amplitude Scaling Factors (list of floats)") #
     parser.add_argument('-rx1', type=int, default=0, help='First Point Location for Calculating Residual.')
@@ -128,7 +129,9 @@ class SpecSimArgs :
         Save Each Peak in a Basis Set, Designate the Folder Path.
     res : float
         Resolution of the simulation.
-    scale : float
+    ndim : int
+        Number of dimensions to simulate
+    scale : list[float]
         Scaling factor for the simulation.
     rx1 : float
         Receiver gain for the first receiver.
@@ -176,8 +179,8 @@ class SpecSimArgs :
         Gaussian decay constant.
     gAmp : float
         Gaussian amplitude.
-    xOff : float
-        X-axis offset.
+    offsets : list[float]
+        offset for each dimension
     j1 : float
         First J-coupling constant.
     j2 : float
@@ -217,6 +220,7 @@ class SpecSimArgs :
         self.apod : str = args.apod
         self.out : str = args.out
         self.basis : str = args.basis
+        self.ndim : int = args.ndim
         self.res : str = args.res
         self.scale : list[float] = args.scale
         self.rx1: int = args.rx1
@@ -242,7 +246,7 @@ class SpecSimArgs :
         self.eAmp : str = args.eAmp
         self.gDecay : str = args.gDecay
         self.gAmp : str = args.gAmp
-        self.offsets : float = args.off
+        self.offsets : list[float] = args.off
         self.j1 : str = args.j1
         self.j2 : str = args.j2
         self.j3 : str = args.j3
@@ -261,7 +265,7 @@ class SpecSimArgs :
 
     def __str__(self) -> str :
         return (f"SpecSimArgs(tab={self.tab}, fid={self.fid}, ft1={self.ft1}, ft2={self.ft2}, apod={self.apod}, out={self.out}, "
-                f"res={self.res}, scale={self.scale}, rx1={self.rx1}, rxn={self.rxn}, mode={self.mode}, trials={self.trials}, "
+                f"res={self.res}, ndim={self.ndim}, scale={self.scale}, rx1={self.rx1}, rxn={self.rxn}, mode={self.mode}, trials={self.trials}, "
                 f"maxFail={self.maxFail}, iseed={self.iseed}, verb={self.verb}, noverb={self.noverb}, "
                 f"report={self.report}, freq={self.freq}, initXDecay={self.initXDecay}, initYDecay={self.initYDecay}, "
                 f"xDecayBounds={self.xDecayBounds}, yDecayBounds={self.yDecayBounds}, "

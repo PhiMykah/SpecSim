@@ -109,8 +109,8 @@ def optimize(input_spectrum : Spectrum,
 
     # ------------------------------- Initial Decay ------------------------------ #
     # Ensure the initial decays and spectrum dimensions match
-    if not num_of_dimensions == len(opt_params.initial_decay):
-        raise ValueError(f"Number of initial decay dimensions {len(opt_params.initial_decay)} " \
+    if not num_of_dimensions == len(opt_params.initial_decay[0]):
+        raise ValueError(f"Number of initial decay dimensions {len(opt_params.initial_decay[0])} " \
                          f"does not match Spectrum dimensions {num_of_dimensions}!")
     
     # Collect the initial decay values
@@ -126,8 +126,8 @@ def optimize(input_spectrum : Spectrum,
     # ------------------------------- Decay Bounds ------------------------------- #
 
     # Ensure the decay bounds and spectrum dimensions match
-    if not num_of_dimensions == len(opt_params.bounds):
-        raise ValueError(f"Number of initial decay dimensions {len(opt_params.bounds)} " \
+    if not num_of_dimensions == len(opt_params.bounds[0]):
+        raise ValueError(f"Number of initial decay dimensions {len(opt_params.bounds[0])} " \
                          f"does not match Spectrum dimensions {num_of_dimensions}!")
     
     # Collect the initial bounds
@@ -150,8 +150,8 @@ def optimize(input_spectrum : Spectrum,
     # ------------------------------- Initial Phase ------------------------------ #
 
     # Ensure the initial phase and spectrum dimensions match
-    if not num_of_dimensions == len(opt_params.initial_phase):
-        raise ValueError(f"Number of initial decay dimensions {len(opt_params.initial_phase)} " \
+    if not num_of_dimensions == len(opt_params.initial_phase[0]):
+        raise ValueError(f"Number of initial decay dimensions {len(opt_params.initial_phase[0])} " \
                          f"does not match Spectrum dimensions {num_of_dimensions}!")
 
     # Collect the initial phase
