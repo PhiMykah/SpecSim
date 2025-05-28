@@ -34,4 +34,5 @@ def outer_product_summation(x_axis : npt.ArrayLike, y_axis : npt.ArrayLike) -> n
     else:
         data_result = np.einsum('ki,kj->ji', x_axis, y_axis)
     
+
     return data_result

@@ -208,8 +208,8 @@ def optimize(input_spectrum : Spectrum,
 
     # ---------------------------------- Weights --------------------------------- #
 
-    initial_weight : list[float] = [0.5] * peak_count  * num_of_dimensions
-    initial_weight = initial_weight * (parameter_count - 1) if parameter_count > 1 else initial_weight
+    initial_weight : list[float] = [opt_params.initial_weight] * peak_count  * num_of_dimensions
+    initial_weight = initial_weight * max((parameter_count - 1), 1)
 
     # ------------------------------- Weight Bounds ------------------------------ #
 
@@ -269,13 +269,14 @@ def optimize(input_spectrum : Spectrum,
                                  fid, interferogram, data_frame_spectrum, difference_equation, 
                                  offsets, constant_time_region_sizes, scaling_factors, parameter_count)
             result : Any = least_squares(objective_function, initial_params, '2-point',
-                                   optimization_bounds, 'dogbox', args=optimization_args, 
+                                   optimization_bounds, 'trf', args=optimization_args, 
                                    verbose=verbose, max_nfev=opt_params.trials)
             optimized_params : np.ndarray[Any, np.dtype[np.float32]] = result.x
         case OptMethod.BASIN:
             disp : bool = True if input_spectrum.verbose else False
             result = basinhopping(objective_function, initial_params, niter=opt_params.trials,
-                                  stepsize=opt_params.step_size, minimizer_kwargs={"args":optimization_args},
+                                  stepsize=opt_params.step_size, 
+                                  minimizer_kwargs={"method": "L-BFGS-B", "args":optimization_args},
                                   disp=disp)
             optimized_params = result.x
         case OptMethod.MIN:

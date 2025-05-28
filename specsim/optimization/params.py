@@ -24,7 +24,8 @@ class OptimizationParams:
         Upper and lower bounds for the p0 phase in degrees, by default (-180.0, 180.0)
     p1_bounds : tuple[float, float], optional
         Upper and lower bounds for the p1 phase in degrees, by default (-180.0, 180.0)
-
+    initial_weight : float, optional 
+        Initial weight value for the optimization
     Raises
     ------
     TypeError
@@ -41,7 +42,8 @@ class OptimizationParams:
             bounds : list[Vector[tuple[float, float]]] | Vector[tuple[float, float]] | None = None,
             amplitude_bounds : tuple[float, float] | None = None,
             p0_bounds : tuple[float, float] | None = None,
-            p1_bounds : tuple[float, float] | None = None) -> None:
+            p1_bounds : tuple[float, float] | None = None,
+            initial_weight : float | None = None) -> None:
 
         if not isinstance(num_of_dimensions, int):
             raise TypeError("Number of dimensions for optimization parameters must be an integer.")
@@ -56,6 +58,7 @@ class OptimizationParams:
         self.amplitude_bounds = amplitude_bounds
         self.p0_bounds = p0_bounds
         self.p1_bounds = p1_bounds
+        self.initial_weight = initial_weight
 
     # ---------------------------------------------------------------------------- #
     #                              Getters and Setters                             #
@@ -230,6 +233,26 @@ class OptimizationParams:
             self._p1_bounds : tuple[float, float] = value
         else:
             raise TypeError("p1_bounds must be a tuple of two float values!")
+    
+    # ------------------------------ Initial Weight ------------------------------ #
+
+    @property
+    def initial_weight(self) -> float:
+        return self._initial_weight
+    
+    @initial_weight.setter
+    def initial_weight(self, value) -> None:
+        if value is None:
+            self._initial_weight : float = 0.5
+        elif isinstance(value, float):
+            if value < 0.0:
+                self._initial_weight : float = 0.0
+            elif value > 1.0:
+                self._initial_weight : float = 1.0
+            else:
+                self._initial_weight : float = value
+        else:
+            raise TypeError("initial_weight must be a tuple of two float values!")
         
     # ---------------------------------------------------------------------------- #
     #                                Magic Functions                               #

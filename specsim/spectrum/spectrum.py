@@ -239,10 +239,21 @@ class Spectrum:
 
         if dimensions == 2:
             result : np.ndarray[Any, np.dtype[Any]] = outer_product_summation(spectral_data[0], spectral_data[1])
-
+            # Ensure result data type is float32 if float64 and complex64 if complex128
+            if result.dtype == np.float64:
+                result = result.astype(np.float32)
+            elif result.dtype == np.complex128:
+                result = result.astype(np.complex64)
             self._build_basis_set(basis_set_folder, spectral_data)
             return result
         
+        for result in spectral_data:
+            # Ensure each result data type is float32 if float64 and complex64 if complex128
+            if result.dtype == np.float64:
+                result = result.astype(np.float32)
+            elif result.dtype == np.complex128:
+                result = result.astype(np.complex64)
+                
         return np.ndarray(spectral_data)
 
 
@@ -620,8 +631,11 @@ class Spectrum:
         for i, peak in enumerate(self.peaks):
             for p in range(unpack_count - 1):
                 for j in range(num_of_dimensions):
+                    weight_index : int = i + (j * peak_count) + (2 * p * peak_count)
                     if peak.weights is not None:
-                        weight_index : int = i + (j * peak_count) + (2 * p * peak_count)
+                        peak.weights[p][j] = weights[weight_index]
+                    else:
+                        peak.weights = [Vector([0.0] * num_of_dimensions)] * max(unpack_count-1, 1)
                         peak.weights[p][j] = weights[weight_index]
     
     # ---------------------------------------------------------------------------- #

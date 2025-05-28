@@ -23,10 +23,13 @@ class Vector(Generic[T]):
     def __init__(self, *args : T | list[T], index: int | None = None) -> None:
         if len(args) == 1 and isinstance(args[0], list):
             self.elements: list[Any] = args[0]
-        else:
+            self.datatype : type[list[Any] | type[T]] | None = type(args[0][0])
+        elif args is not None:
             self.elements = list(args)
+            self.datatype : type[list[Any] | type[T]] | None = type(args[0])
+        else:
+            self.datatype = None
         self.index : int | None = index
-        self.datatype : type[list[Any] | type[T]] | None = type(args[0]) if args else None
 
     def append(self, value) -> None:
         """

@@ -50,7 +50,7 @@ def test_spectrum_small_simulation() -> None:
 
     output.setArray(simulation)
 
-    assert not pype.write_to_file(output, file_path(OUTPUT, "sim_ssr_small.ft1"), True)
+    assert not pype.write_to_file(output, file_path(OUTPUT, "sim_small.ft1"), True)
 
 def test_spectrum_full_simulation() -> None:
     file: str = file_path(DEFAULT, "test.tab")
@@ -82,7 +82,7 @@ def test_spectrum_full_simulation() -> None:
 
     output.setArray(simulation)
 
-    assert not pype.write_to_file(output, file_path(OUTPUT, "sim_ssr_full.ft1"), True)
+    assert not pype.write_to_file(output, file_path(OUTPUT, "sim_full.ft1"), True)
 
 def test_spectrum_composite_simulation() -> None:
     file : str = file_path(DEFAULT, "test.tab")
@@ -114,7 +114,7 @@ def test_spectrum_composite_simulation() -> None:
 
     output.setArray(simulation)
 
-    assert not pype.write_to_file(output, file_path(OUTPUT, "sim_ssr_composite.ft1"), True)
+    assert not pype.write_to_file(output, file_path(OUTPUT, "sim_composite.ft1"), True)
 
 def test_spectrum_single_simulation() -> None:
     file : str = file_path(SINGLE, "single.tab")
@@ -146,7 +146,7 @@ def test_spectrum_single_simulation() -> None:
 
     output.setArray(simulation)
 
-    assert not pype.write_to_file(output, file_path(OUTPUT, "sim_ssr_single.ft1"), True)
+    assert not pype.write_to_file(output, file_path(OUTPUT, "sim_single.ft1"), True)
 
 def test_spectrum_double_simulation() -> None:
     file : str = file_path(DOUBLE, "double.tab")
@@ -178,7 +178,7 @@ def test_spectrum_double_simulation() -> None:
 
     output.setArray(simulation)
 
-    assert not pype.write_to_file(output, file_path(OUTPUT, "sim_ssr_double.ft1"), True)
+    assert not pype.write_to_file(output, file_path(OUTPUT, "sim_double.ft1"), True)
 
 def test_spectrum_zero_simulation() -> None:
     file : str = file_path(ZERO, "zero_freq.tab")
@@ -210,7 +210,7 @@ def test_spectrum_zero_simulation() -> None:
 
     output.setArray(simulation)
 
-    assert not pype.write_to_file(output, file_path(OUTPUT, "sim_ssr_zero.ft1"), True)
+    assert not pype.write_to_file(output, file_path(OUTPUT, "sim_zero.ft1"), True)
 
     spectrum_data_frame = pype.DataFrame(file_path(ZERO, "zero_freq_gauss.ft2"))
     spectrum_interferogram = pype.DataFrame(file_path(ZERO, "zero_freq_gauss.ft1"))
