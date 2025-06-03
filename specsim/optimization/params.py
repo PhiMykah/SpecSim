@@ -43,7 +43,7 @@ class OptimizationParams:
             amplitude_bounds : tuple[float, float] | None = None,
             p0_bounds : tuple[float, float] | None = None,
             p1_bounds : tuple[float, float] | None = None,
-            initial_weight : float | None = None) -> None:
+            initial_weight : list[Vector[float]] | Vector[float] | None = None) -> None:
 
         if not isinstance(num_of_dimensions, int):
             raise TypeError("Number of dimensions for optimization parameters must be an integer.")
@@ -237,22 +237,32 @@ class OptimizationParams:
     # ------------------------------ Initial Weight ------------------------------ #
 
     @property
-    def initial_weight(self) -> float:
+    def initial_weight(self) -> list[Vector[float]]:
         return self._initial_weight
     
     @initial_weight.setter
     def initial_weight(self, value) -> None:
         if value is None:
-            self._initial_weight : float = 0.5
+            self._initial_weight : list[Vector[float]] = [Vector([0.5] * self._num_of_dimensions)]
         elif isinstance(value, float):
-            if value < 0.0:
-                self._initial_weight : float = 0.0
-            elif value > 1.0:
-                self._initial_weight : float = 1.0
-            else:
-                self._initial_weight : float = value
+            self._initial_weight : list[Vector[float]] = [Vector([max(min(value, 1.0),0.0)] * self._num_of_dimensions)]
+        elif isinstance(value, Vector) and all(isinstance(v, float) for v in value):
+            clamped_values: list[float] = [max(min(v, 1.0), 0.0) for v in value]
+            self._initial_weight : list[Vector[float]] = [Vector(clamped_values)]
+        elif isinstance(value, list) and all(isinstance(v, Vector) and all(isinstance(f, float) for f in v) for v in value):
+            # Assure that each vector in the list has a length equal to the number of dimensions
+            for v in value:
+                if len(v) != self._num_of_dimensions:
+                    raise ValueError(f"Vector and number of dimensions mismatch! Vector \
+                                     ({len(v)}) must match {self._num_of_dimensions} dimension(s).")
+            clamped_vectors : list[Vector[float]] = []
+            for vector in value:
+                clamped_values = [max(min(v, 1.0), 0.0) for v in vector]
+                clamped_vectors.append(Vector(clamped_values))
+
+            self._initial_weight : list[Vector[float]] = clamped_vectors
         else:
-            raise TypeError("initial_weight must be a tuple of two float values!")
+            raise TypeError("initial_weight must be list of float vectors, float Vector, or a float!")
         
     # ---------------------------------------------------------------------------- #
     #                                Magic Functions                               #
@@ -263,11 +273,13 @@ class OptimizationParams:
                 f"trials={self._trials}, step_size={self._step_size}, "
                 f"initial_decay={self._initial_decay}, initial_phase={self._initial_phase}, "
                 f"bounds={self._bounds}, amplitude_bounds={self._amplitude_bounds}, "
-                f"p0_bounds={self._p0_bounds}, p1_bounds={self._p1_bounds})")
+                f"p0_bounds={self._p0_bounds}, p1_bounds={self._p1_bounds}, "
+                f"initial_weight={self._initial_weight})")
 
     def __repr__(self) -> str:
         return (f"OptimizationParams(num_of_dimensions={self._num_of_dimensions}, "
                 f"trials={self._trials}, step_size={self._step_size}, "
                 f"initial_decay={repr(self._initial_decay)}, initial_phase={repr(self._initial_phase)}, "
                 f"bounds={repr(self._bounds)}, amplitude_bounds={repr(self._amplitude_bounds)}, "
-                f"p0_bounds={repr(self._p0_bounds)}, p1_bounds={repr(self._p1_bounds)})")
+                f"p0_bounds={repr(self._p0_bounds)}, p1_bounds={repr(self._p1_bounds)}, "
+                f"initial_weight={repr(self._initial_weight)})")

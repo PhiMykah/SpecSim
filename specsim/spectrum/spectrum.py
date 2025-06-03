@@ -8,6 +8,7 @@ from typing import Callable, Any
 from enum import Enum
 from inspect import Signature, signature
 from copy import deepcopy
+from matplotlib import pyplot as plt
 
 type File = str | Path
 type ModelFunction = Callable[[Peak, int, int, int, PointUnits, list[PointUnits], float, list[Phase], int, np.ndarray | None, np.ndarray | None, float], np.ndarray]
@@ -110,6 +111,7 @@ class Spectrum:
         self._null_string : str = null_string
         self._null_value : float = null_value
         self.verbose: bool = verbose
+        self._deco_coefficients = None
     
     # ---------------------------------------------------------------------------- #
     #                              Spectral Simulation                             #
@@ -190,52 +192,7 @@ class Spectrum:
         
         process_iterations : int = int(self._domain.value) if dimensions >= 1 else 0
 
-        spectral_data : list = [*simulations]
-        fid : pype.DataFrame = spectrum_fid
-
-        # Iterate through all dimensions in need of processing
-        for i in range(process_iterations):
-            spectral_data[i] = []
-            # Go through all peaks in simulation
-            for j in range(len(simulations[i])):
-                iteration_df = pype.DataFrame(file=fid.file, header=fid.header, array=fid.array)
-                iteration_df.array = simulations[i][j]
-                dim : int = i + 1
-
-                #  Add first point scaling and window function if necessary
-                off_param : float = spectrum_data_frame.getParam("NDAPODQ1", dim)
-                end_param : float = spectrum_data_frame.getParam("NDAPODQ2", dim)
-                pow_param : float = spectrum_data_frame.getParam("NDAPODQ3", dim)
-                elb_param : float = spectrum_data_frame.getParam("NDLB", dim)
-                glb_param : float = spectrum_data_frame.getParam("NDGB", dim)
-                goff_param : float = spectrum_data_frame.getParam("NDGOFF", dim)
-                first_point_scale : float = 1 + spectrum_data_frame.getParam("NDC1", dim)
-
-                iteration_df.runFunc("SP", {"sp_off":off_param, "sp_end":end_param, "sp_pow":pow_param, "sp_elb":elb_param,
-                                            "sp_glb":glb_param, "sp_goff":goff_param, "sp_c":first_point_scale})
-                # Zero fill if necessary
-                iteration_df.runFunc("ZF", {"zf_count":1, 'zf_auto':True})
-
-                # Convert to frequency domain
-                iteration_df.runFunc("FT")
-                
-                # No need to perform phase correction since each peak has been properly phase corrected 
-
-                # Delete imaginary values
-                iteration_df.runFunc("DI")
-                
-                # Extract designated region if necessary
-                first_point = int(spectrum_data_frame.getParam("NDX1", dim))
-                last_point = int(spectrum_data_frame.getParam("NDXN", dim))
-                if first_point and last_point:
-                    if first_point != 0 or last_point != 0:
-                        if first_point == 1:
-                            first_point : int = first_point-1 
-                        if first_point <= last_point:
-                            iteration_df.array = iteration_df.array[first_point:last_point+1]
-
-                # Add peak to list
-                spectral_data[i].append(iteration_df.array)
+        spectral_data : list = self._process_dimensions(process_iterations, simulations, spectrum_fid, spectrum_data_frame)
 
         if dimensions == 2:
             result : np.ndarray[Any, np.dtype[Any]] = outer_product_summation(spectral_data[0], spectral_data[1])
@@ -256,6 +213,67 @@ class Spectrum:
                 
         return np.ndarray(spectral_data)
 
+    def simulate_basis(self, model_function : ModelFunction, spectrum_data_frame : pype.DataFrame,
+                 spectrum_interferogram : pype.DataFrame, 
+                 spectrum_fid : pype.DataFrame, 
+                 dimensions : int = 2,
+                 peaks_simulated : list[int] | int | None = None,
+                 domain : int = 1, constant_time_region_sizes : Vector[int] | None = None,
+                 phase_values : Vector[Phase] | list[Vector[Phase]] | None = None,
+                 offsets : Vector[float] | None = None,
+                 scaling_factors : Vector[float] | None = None) -> list[np.ndarray[Any, np.dtype[Any]]]:
+        try:
+            self._validate_simulation_parameters(model_function, spectrum_data_frame, spectrum_interferogram, 
+                                spectrum_fid, dimensions, peaks_simulated, domain,
+                                constant_time_region_sizes, phase_values, offsets, scaling_factors)
+        except (TypeError, ValueError) as e:
+            raise e
+
+        # Perform a 1D simulation for each dimension of the spectrum
+        simulations : list[np.ndarray[Any, np.dtype[Any]]] = []
+        for dim in range(self._dimensions):
+            sim_1D_peaks : np.ndarray[Any, np.dtype[np.float32]] = self.spectral_simulation_1D(
+                model_function, dim, self._peaks_simulated, self._constant_time_region_sizes[dim],
+                self._phase_values, self._offsets[dim], self._scaling_factors[dim]
+            )
+            simulations.append(sim_1D_peaks)
+        
+        process_iterations : int = int(self._domain.value) if dimensions >= 1 else 0
+
+        spectral_data : list = self._process_dimensions(process_iterations, simulations,
+                                                 spectrum_fid, spectrum_data_frame)
+
+        if dimensions != 2:
+            return [np.ndarray(spectral_data)]
+        
+        x_axis : np.ndarray[Any, np.dtype[Any]] = np.array(spectral_data[0])
+        y_axis : np.ndarray[Any, np.dtype[Any]] = np.array(spectral_data[1])
+        y_length : int = y_axis.shape[-1]
+
+        if np.iscomplexobj(y_axis):
+            interleaved_data : np.ndarray[Any, np.dtype[Any]] = np.zeros(y_axis.shape[:-1] + (y_length * 2,), dtype=y_axis.real.dtype) # type: ignore
+            for i in range(len(interleaved_data)):
+                interleaved_data[i][0::2] = y_axis[i].real
+                interleaved_data[i][1::2] = y_axis[i].imag
+
+            y_axis = interleaved_data
+            y_length = y_length * 2
+
+        # Create the x-axis y-axis pairings
+        planes : list[np.ndarray[Any, np.dtype[Any]]] = []
+        peak_count : int = len(self._peaks)
+
+        for i in range(peak_count):
+            plane : np.ndarray[Any, np.dtype[Any]] = np.outer(y_axis[i], x_axis[i])
+            
+            # Set plane datatype to float32 if float64 and complex64 if complex128
+            if plane.dtype == np.float64:
+                plane = plane.astype(np.float32)
+            elif plane.dtype == np.complex128:
+                plane = plane.astype(np.complex64)
+            planes.append(plane)
+
+        return planes
 
     def spectral_simulation_1D(self, model_function : ModelFunction, dim : int,
                             peaks_simulated : list[int],
@@ -361,7 +379,7 @@ class Spectrum:
         y_length : int = y_axis.shape[-1]
 
         if np.iscomplexobj(y_axis):
-            interleaved_data : np.ndarray[Any, np.dtype[Any]] = np.zeros(y_axis.shape[:-1] + (y_length * 2,), dtype=y_axis.real.dtype)
+            interleaved_data : np.ndarray[Any, np.dtype[Any]] = np.zeros(y_axis.shape[:-1] + (y_length * 2,), dtype=y_axis.real.dtype) # type: ignore
             for i in range(len(interleaved_data)):
                 interleaved_data[i][0::2] = y_axis[i].real
                 interleaved_data[i][1::2] = y_axis[i].imag
@@ -400,7 +418,76 @@ class Spectrum:
             pype.write_to_file(iteration_df, str(output_file) , True)
             planes.append(plane)
 
+    def _process_dimensions(self, process_iterations : int,
+                            simulations : list[np.ndarray[Any, np.dtype[Any]]],
+                            fid : pype.DataFrame, spectrum_data_frame : pype.DataFrame) -> list:
+        """
+        Perform nmrPype Processing on data and each dimension
 
+        Parameters
+        ----------
+        process_iterations : int
+            Number of iterations to perform based on desired fid, interferogram, or spectrum output
+        simulations : list[np.ndarray[Any, np.dtype[Any]]]
+            List of simulations for each dimension
+        fid : nmrPype.DataFrame
+            Time-domain nmrPype data
+        spectrum_data_frame : nmrPype.DataFrame
+            Fully-processed nmrPype Data
+
+        Returns
+        -------
+        list
+            Processed data for each dimension
+        """
+        
+        spectral_data : list = [*simulations]
+
+        for i in range(process_iterations):
+            spectral_data[i] = []
+            # Go through all peaks in simulation
+            for j in range(len(simulations[i])):
+                iteration_df = pype.DataFrame(file=fid.file, header=fid.header, array=fid.array)
+                iteration_df.array = simulations[i][j]
+                dim : int = i + 1
+
+                #  Add first point scaling and window function if necessary
+                off_param : float = spectrum_data_frame.getParam("NDAPODQ1", dim)
+                end_param : float = spectrum_data_frame.getParam("NDAPODQ2", dim)
+                pow_param : float = spectrum_data_frame.getParam("NDAPODQ3", dim)
+                elb_param : float = spectrum_data_frame.getParam("NDLB", dim)
+                glb_param : float = spectrum_data_frame.getParam("NDGB", dim)
+                goff_param : float = spectrum_data_frame.getParam("NDGOFF", dim)
+                first_point_scale : float = 1 + spectrum_data_frame.getParam("NDC1", dim)
+
+                iteration_df.runFunc("SP", {"sp_off":off_param, "sp_end":end_param, "sp_pow":pow_param, "sp_elb":elb_param,
+                                            "sp_glb":glb_param, "sp_goff":goff_param, "sp_c":first_point_scale})
+                # Zero fill if necessary
+                iteration_df.runFunc("ZF", {"zf_count":1, 'zf_auto':True})
+
+                # Convert to frequency domain
+                iteration_df.runFunc("FT")
+                
+                # No need to perform phase correction since each peak has been properly phase corrected 
+
+                # Delete imaginary values
+                iteration_df.runFunc("DI")
+                
+                # Extract designated region if necessary
+                first_point = int(spectrum_data_frame.getParam("NDX1", dim))
+                last_point = int(spectrum_data_frame.getParam("NDXN", dim))
+                if first_point and last_point:
+                    if first_point != 0 or last_point != 0:
+                        if first_point == 1:
+                            first_point : int = first_point-1 
+                        if first_point <= last_point:
+                            iteration_df.array = iteration_df.array[first_point:last_point+1]
+
+                # Add peak to list
+                spectral_data[i].append(iteration_df.array)
+
+        return spectral_data
+    
     def _validate_simulation_parameters(self, model_function, spectrum_data_frame, spectrum_interferogram,
                         spectrum_fid, dimensions, peaks_simulated, domain, constant_time_region_sizes,
                         phase_values, offsets, scaling_factors) -> None:
@@ -580,8 +667,8 @@ class Spectrum:
         self._scaling_factors : Vector[float] = scaling_factors
 
     def update_peaks(self, decay_list : list, 
-                     phase_list : list, peak_height_list : list, weights : list, 
-                     unpack_count : int, num_of_dimensions : int) -> None:
+                     phase_list : list, weights : list, 
+                     unpack_count : int, num_of_dimensions : int, peak_height_list : list | None = None) -> None:
         """
         Updates the peaks with the provided decay, phase, and intensity parameters.
 
@@ -591,12 +678,12 @@ class Spectrum:
             A list of decay values used to update the linewidth of each peak.
         phase_list : list
             A list of phase values used to update the p0 and p1 phase parameters
-        peak_height_list : list
-            A list of intensity values used to update the intensity of each peak.
         unpack_count : int
             The number of unpacking iterations to perform for each peak.
         num_of_dimensions : int
             The number of dimensions to consider when updating the peaks.
+        peak_height_list : list
+            A list of intensity values used to update the intensity of each peak. By default None
 
         Returns
         -------
@@ -622,20 +709,23 @@ class Spectrum:
                     p1_index : int = peak_count + i + (j * phase_offset) + (2 * p * phase_offset)
                     peak.phase[p][j].p0 = phase_list[p0_index]
                     peak.phase[p][j].p1 = phase_list[p1_index]
-                    
-            peak.intensity = peak_height_list[i]
+            
+            if peak_height_list is not None:
+                peak.intensity = peak_height_list[i]
+            elif self.deco_coefficients is not None: 
+                peak.intensity = self.deco_coefficients[i]
 
         if weights is None or len(weights) == 0:
             return
         
         for i, peak in enumerate(self.peaks):
-            for p in range(unpack_count - 1):
+            for p in range(unpack_count):
                 for j in range(num_of_dimensions):
                     weight_index : int = i + (j * peak_count) + (2 * p * peak_count)
                     if peak.weights is not None:
                         peak.weights[p][j] = weights[weight_index]
                     else:
-                        peak.weights = [Vector([0.0] * num_of_dimensions)] * max(unpack_count-1, 1)
+                        peak.weights = [Vector([0.0] * num_of_dimensions)] * unpack_count
                         peak.weights[p][j] = weights[weight_index]
     
     # ---------------------------------------------------------------------------- #
@@ -718,7 +808,7 @@ class Spectrum:
     # -------------------------------- Null Value -------------------------------- #
 
     @property
-    def null_value(self) -> float:
+    def null_value(self) -> float | None:
         return self._null_value
     
     @null_value.setter
@@ -727,6 +817,18 @@ class Spectrum:
             raise TypeError("Null value must be an integer or float.")
         self._null_value = null_value
     
+    @property
+    def deco_coefficients(self) -> list[float] | None:
+        return self._deco_coefficients
+    
+    @deco_coefficients.setter
+    def deco_coefficients(self, value) -> None:
+        if isinstance(value, list) and all(isinstance(v, float) for v in value):
+            self._deco_coefficients : list[float] | None = value
+        if not isinstance(value, list) or not (all(np.issubdtype(type(v), np.floating) for v in value)):
+            raise TypeError("deco_coefficients must be a list of floats.")
+        self._deco_coefficients : list[float] | None = [float(v) for v in value]
+
     # ---------------------------------------------------------------------------- #
     #                                 Magic Methods                                #
     # ---------------------------------------------------------------------------- #

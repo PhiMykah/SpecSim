@@ -73,13 +73,20 @@ def sim_composite_1D(
         peak, dimension, time_domain_size, frequency_domain_size, frequency, [linewidths[1]], 
         amplitude, [phases[1]], constant_time_region_size, cos_mod_values, sin_mod_values, scale)
     
-    # Collect gaussian scalar if it exists
-    if peak.weights:
+    # Collect weights if they exist
+    if peak.weights is not None and len(peak.weights) < 2:
+        exp_weight : float = peak.weights[0][dimension]
         gauss_weight : float = peak.weights[0][dimension]
+    elif peak.weights:
+        exp_weight : float = peak.weights[0][dimension]
+        gauss_weight : float = peak.weights[1][dimension]
     else:
+        exp_weight : float = 1.0
         gauss_weight : float = 1.0
 
+    
+
     # Compute combination of exponential and gaussian
-    composite_spectrum : np.ndarray[Any, np.dtype[Any]] = exponential_component + gauss_weight * gaussian_component
+    composite_spectrum : np.ndarray[Any, np.dtype[Any]] = exp_weight * exponential_component + gauss_weight * gaussian_component
 
     return composite_spectrum

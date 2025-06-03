@@ -20,7 +20,7 @@ def parse_command_line(argument_list : str | list) -> argparse.Namespace :
     parser.add_argument('-scale', type=float, nargs='+', default=[1.0, 1.0], help="Amplitude Scaling Factors (list of floats)") #
     parser.add_argument('-rx1', type=int, default=0, help='First Point Location for Calculating Residual.')
     parser.add_argument('-rxn', type=int, default=0, help='Last Point Location for Calculating Residual.')
-    parser.add_argument('-mode', type=str, choices=['lsq', 'basin', 'minimize', 'brute'], default='lsq', help='Optimization mode (lsq, basin, minimize, brute).') #
+    parser.add_argument('-mode', type=str, choices=['lsq', 'basin', 'minimize', 'brute', 'danneal'], default='lsq', help='Optimization mode (lsq, basin, minimize, brute).') #
     parser.add_argument('-trials', type=int, default=100, help='Number of Optimization Trials.') #
     parser.add_argument('-maxFail', type=int, default=0, help='Max Optimization Fails Before Quitting.')
     parser.add_argument('-iseed', type=int, default=randint(1, sys.maxsize), help='Random Number Seed.')
