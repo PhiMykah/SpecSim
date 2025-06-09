@@ -249,11 +249,15 @@ def test_p3ak_composite_optimization(p3ak_composite_spectrum : Spectrum, p3ak_co
     p3ak_composite_spectrum.verbose = True
     model_function : Callable[..., np.ndarray[Any, np.dtype[Any]]] = sim_composite_1D
     num_of_dimensions : int = 2
-    initial_weight : list[Vector[float]] = [Vector([0.25, 0.25])] * 2
-    opt_params = OptimizationParams(num_of_dimensions, initial_weight=initial_weight)
+    
+    opt_params = OptimizationParams(num_of_dimensions)
     offsets = Vector(0.0, 0.0)
     scaling_factor = Vector(1.0, 1.0)
     opt_params.trials = 500
+    opt_params.initial_weight = [Vector([1.0, 1.0]), Vector([0.4, 0.4])]
+    opt_params.amplitude_bounds = (0.7, 1.3)
+    opt_params.p0_bounds = (0.0, 0.0)
+    opt_params.p1_bounds = (0.0, 0.0)
 
     optimized_spectrum : Spectrum = optimize(p3ak_composite_spectrum, model_function, fid,
                                         interferogram, df_spectrum,
@@ -266,24 +270,24 @@ def test_p3ak_composite_optimization(p3ak_composite_spectrum : Spectrum, p3ak_co
     output = pype.DataFrame(file_path(P3AK, "p3ak_freq_comp.ft1"))
 
     # Plot synthetic data
-    plt.figure(figsize=(8, 6))
-    plt.contourf(simulation, levels=50, cmap='viridis')
-    plt.colorbar(label='Intensity')
-    plt.title('Synthetic Data')
-    plt.xlabel('Dimension 1')
-    plt.ylabel('Dimension 2')
-    plt.show()
+    # plt.figure(figsize=(8, 6))
+    # plt.contourf(simulation, levels=50, cmap='viridis')
+    # plt.colorbar(label='Intensity')
+    # plt.title('Synthetic Data')
+    # plt.xlabel('Dimension 1')
+    # plt.ylabel('Dimension 2')
+    # plt.show()
 
-    # Plot original data array
-    plt.figure(figsize=(8, 6))
-    plt.contourf(output.array, levels=50, cmap='viridis')
-    plt.colorbar(label='Intensity')
-    plt.title('Original Data Array')
-    plt.xlabel('Dimension 1')
-    plt.ylabel('Dimension 2')
-    plt.show()
+    # # Plot original data array
+    # plt.figure(figsize=(8, 6))
+    # plt.contourf(output.array, levels=50, cmap='viridis')
+    # plt.colorbar(label='Intensity')
+    # plt.title('Original Data Array')
+    # plt.xlabel('Dimension 1')
+    # plt.ylabel('Dimension 2')
+    # plt.show()
     
-    plt.close('all')
+    # plt.close('all')
 
     output.setArray(simulation)
 

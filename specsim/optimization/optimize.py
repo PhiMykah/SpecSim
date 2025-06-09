@@ -328,6 +328,7 @@ def optimize(input_spectrum : Spectrum,
 
         optimized_spectrum.update_peaks(optimized_decays, optimized_phases, optimized_weights, parameter_count, num_of_dimensions)
 
+    np.save("specsim/tests/data/output/numpy/optimized_params.npy", optimized_params)
     return optimized_spectrum
 
 

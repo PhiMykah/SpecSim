@@ -1,4 +1,5 @@
 from ..datatypes import Vector, Phase
+from math import ulp
 
 class OptimizationParams:
     """
@@ -194,9 +195,12 @@ class OptimizationParams:
         if value is None:
             self._amplitude_bounds : tuple[float, float] = (0.0, 10.0)
         elif isinstance(value, tuple) and len(value) == 2 and all(isinstance(v, float) for v in value):
-            if value[0] >= value[1]:
+            if value[0] > value[1]:
                 raise ValueError("amplitude bounds must have the first value (lower) less than the second value (higher)!")
-            self._amplitude_bounds : tuple[float, float] = value
+            if value[0] == value[1]:
+                self._amplitude_bounds : tuple[float,float] = (value[0], value[0] + ulp(1.0))
+            else:
+                self._amplitude_bounds : tuple[float, float] = value
         else:
             raise TypeError("amplitude_bounds must be a tuple of two float values!")
 
@@ -211,9 +215,12 @@ class OptimizationParams:
         if value is None:
             self._p0_bounds : tuple[float, float] = (-180.0, 180.0)
         elif isinstance(value, tuple) and len(value) == 2 and all(isinstance(v, float) for v in value):
-            if value[0] >= value[1]:
+            if value[0] > value[1]:
                 raise ValueError("p0 bounds must have the first value (lower) less than the second value (higher)!")
-            self._p0_bounds : tuple[float, float] = value
+            if value[0] == value[1]:
+                self._p0_bounds : tuple[float,float] = (value[0], value[0] + ulp(1.0))
+            else:
+                self._p0_bounds : tuple[float, float] = value
         else:
             raise TypeError("p0_bounds must be a tuple of two float values!")
 
@@ -228,9 +235,12 @@ class OptimizationParams:
         if value is None:
             self._p1_bounds : tuple[float, float] = (-180.0, 180.0)
         elif isinstance(value, tuple) and len(value) == 2 and all(isinstance(v, float) for v in value):
-            if value[0] >= value[1]:
+            if value[0] > value[1]:
                 raise ValueError("p1 bounds must have the first value (lower) less than the second value (higher)!")
-            self._p1_bounds : tuple[float, float] = value
+            if value[0] == value[1]:
+                self._p1_bounds : tuple[float,float] = (value[0], value[0] + ulp(1.0))
+            else:
+                self._p1_bounds : tuple[float, float] = value
         else:
             raise TypeError("p1_bounds must be a tuple of two float values!")
     

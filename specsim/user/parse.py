@@ -37,10 +37,6 @@ def parse_command_line(argument_list : str | list) -> argparse.Namespace :
     parser.add_argument('-p0Bounds', type=float, nargs=2, default=[-180.0, 180.0], metavar=('LOWER', 'UPPER'), help='Lower and upper bounds for p0 phase correction.')
     parser.add_argument('-p1Bounds', type=float, nargs=2, default=[-180.0, 180.0], metavar=('LOWER', 'UPPER'), help='Lower and upper bounds for p1 phase correction.')
     parser.add_argument('-step', type=float, default=0.1, help='Step-size for optimizations that require step-size (e.g. basin).')
-    parser.add_argument('-eDecay', type=float, nargs='+', default=None, help='Exponential Decays (list of floats).')
-    parser.add_argument('-eAmp', type=str, default='Auto', help='Exponential Amplitudes, or Keyword Auto.')
-    parser.add_argument('-gDecay', type=str, default=None, help='Gaussian Decays (Pts Hz ppm %%).')
-    parser.add_argument('-gAmp', type=str, default='Auto', help='Gaussian Amplitudes, or Keyword Auto.')
     parser.add_argument('-off', type=float, nargs='+', default=[0.0, 0.0], help="Optional Frequency offset value in pts. (list of floats)") #
     parser.add_argument('-j1', type=str, default=None, help='Coupling 1 (Cosine Modulation, Pts Hz ppm %%).')
     parser.add_argument('-j2', type=str, default=None, help='Coupling 2 (Cosine Modulation, Pts Hz ppm %%).')
@@ -49,8 +45,6 @@ def parse_command_line(argument_list : str | list) -> argparse.Namespace :
     parser.add_argument('-xP1', type=float, nargs='+', default=[0.0], help='First Order Phase of All Signals for x-axis (list of floats, one for each model).') #
     parser.add_argument('-yP0', type=float, nargs='+', default=[0.0], help='Zero Order Phase of All Signals for y-axis (list of floats, one for each model).') #
     parser.add_argument('-yP1', type=float, nargs='+', default=[0.0], help='First Order Phase of All Signals for y-axis (list of floats, one for each model).') #
-    parser.add_argument('-ePhase', type=float, default=0.0, help='Additional Phase for Each Exponential Signal.')
-    parser.add_argument('-gPhase', type=float, default=0.0, help='Additional Phase for Each Gaussian Signal.')
     parser.add_argument('-ts', action='store_true', help='Scale Time-Domain Signal by Decay Integral.')
     parser.add_argument('-nots', action='store_true', help='No Time-Domain Scale (Default OFF).')
     parser.add_argument('-notdd', action='store_true', help='Interpret Linewidth in Frequency Domain (Default OFF).')
@@ -171,14 +165,6 @@ class SpecSimArgs :
         Upper bound for amplitude.
     step : float
         Step-size for optimizations that require step-size (e.g. basin).
-    eDecay : float
-        Exponential decay constant.
-    eAmp : float
-        Exponential amplitude.
-    gDecay : float
-        Gaussian decay constant.
-    gAmp : float
-        Gaussian amplitude.
     offsets : list[float]
         offset for each dimension
     j1 : float
@@ -195,10 +181,6 @@ class SpecSimArgs :
         Zero-order phase correction for y-axis for each model.
     yP1 : list[float]
         First-order phase correction for y-axis for each model.
-    ePhase : float
-        Exponential phase correction.
-    gPhase : float
-        Gaussian phase correction.
     ts : bool
         Time-domain simulation flag.
     nots : bool
@@ -242,10 +224,6 @@ class SpecSimArgs :
         self.p0Bounds : list[float] = args.p0Bounds
         self.p1Bounds : list[float] = args.p1Bounds
         self.step : float = args.step
-        self.eDecay : list[float] = args.eDecay
-        self.eAmp : str = args.eAmp
-        self.gDecay : str = args.gDecay
-        self.gAmp : str = args.gAmp
         self.offsets : list[float] = args.off
         self.j1 : str = args.j1
         self.j2 : str = args.j2
@@ -254,8 +232,6 @@ class SpecSimArgs :
         self.xP1: list[float] = args.xP1
         self.yP0: list[float] = args.yP0
         self.yP1: list[float] = args.yP1
-        self.ePhase : float = args.ePhase
-        self.gPhase : float = args.gPhase
         self.ts : bool = args.ts
         self.nots : bool = args.nots
         self.notdd : bool = args.notdd
@@ -270,9 +246,8 @@ class SpecSimArgs :
                 f"report={self.report}, freq={self.freq}, initXDecay={self.initXDecay}, initYDecay={self.initYDecay}, "
                 f"xDecayBounds={self.xDecayBounds}, yDecayBounds={self.yDecayBounds}, "
                 f"ampBounds={self.ampBounds}, p0Bounds={self.p0Bounds}, p1Bounds={self.p1Bounds}, step={self.step}, "
-                f"eDecay={self.eDecay}, eAmp={self.eAmp}, gDecay={self.gDecay}, gAmp={self.gAmp}, "
                 f"offsets={self.offsets}, j1={self.j1}, j2={self.j2}, j3={self.j3}, "
-                f"xP0={self.xP0}, xP1={self.xP1}, yP0={self.yP0}, yP1={self.yP1}, ePhase={self.ePhase}, gPhase={self.gPhase}, "
+                f"xP0={self.xP0}, xP1={self.xP1}, yP0={self.yP0}, yP1={self.yP1}, "
                 f"ts={self.ts}, nots={self.nots}, notdd={self.notdd}, tdd={self.tdd}, tdj={self.tdj}, "
                 f"notdj={self.notdj})")
 

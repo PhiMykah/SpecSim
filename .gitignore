@@ -11,6 +11,7 @@ simulated_data_*.png
 */tests/data/*/*.f*
 */tests/data/basis
 sim_*.f*
+*.npy
 
 # ---------------------------------------------------------------------------- #
 #                                    Python                                    #
