@@ -33,14 +33,13 @@ def errPrint(*args, **kwargs) -> None:
 #                                     Main                                     #
 # ---------------------------------------------------------------------------- #
 
-def main() -> int:
+def main(cmd_args : SpecSimArgs) -> int:
     # --------------------------- Command-line Parsing --------------------------- #
 
-    cmd_args = SpecSimArgs(parse_command_line(sys.argv[1:]))
     data_frame = pype.DataFrame(cmd_args.ft2) # Spectrum nmrpype format data
     interferogram = pype.DataFrame(cmd_args.ft1) # Interferogram nmrpype format data
     data_fid = pype.DataFrame(cmd_args.fid)  # Full time-domain nmrpype format data
-    output_file : str = cmd_args.out # Output file nmrpype format data
+    output_file : str = cmd_args.out if cmd_args.out is not None else "output_file.ft1" # Output file nmrpype format data
 
     num_of_dimensions = cmd_args.ndim
 
@@ -97,6 +96,8 @@ def main() -> int:
     phases: list[Vector[Phase]] = [Vector([x, y]) for x, y in zip(xPhase, yPhase)]
 
     # Ensure scaling_factors and offsets have vector length num_of_dimensions
+    if cmd_args.scale is None:
+        cmd_args.scale = []
     while len(cmd_args.scale) < num_of_dimensions:
         cmd_args.scale.append(1.0)  # Default scaling factor is 1.0
     while len(cmd_args.offsets) < num_of_dimensions:
@@ -252,7 +253,7 @@ def main() -> int:
 
 if __name__ == '__main__':
     try:
-        sys.exit(main())
+        sys.exit(main(SpecSimArgs(parse_command_line(sys.argv[1:]))))
     except Exception as e:
         print(f"Error: {e}")
         sys.exit(1)

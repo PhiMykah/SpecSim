@@ -26,7 +26,10 @@ class Vector(Generic[T]):
             self.datatype : type[list[Any] | type[T]] | None = type(args[0][0])
         elif args is not None:
             self.elements = list(args)
-            self.datatype : type[list[Any] | type[T]] | None = type(args[0])
+            if len(args) == 0:
+                self.datatype = None
+            else:
+                self.datatype : type[list[Any] | type[T]] | None = type(args[0])
         else:
             self.datatype = None
         self.index : int | None = index

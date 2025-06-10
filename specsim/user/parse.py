@@ -38,9 +38,9 @@ def parse_command_line(argument_list : str | list) -> argparse.Namespace :
     parser.add_argument('-p1Bounds', type=float, nargs=2, default=[-180.0, 180.0], metavar=('LOWER', 'UPPER'), help='Lower and upper bounds for p1 phase correction.')
     parser.add_argument('-step', type=float, default=0.1, help='Step-size for optimizations that require step-size (e.g. basin).')
     parser.add_argument('-off', type=float, nargs='+', default=[0.0, 0.0], help="Optional Frequency offset value in pts. (list of floats)") #
-    parser.add_argument('-j1', type=str, default=None, help='Coupling 1 (Cosine Modulation, Pts Hz ppm %%).')
-    parser.add_argument('-j2', type=str, default=None, help='Coupling 2 (Cosine Modulation, Pts Hz ppm %%).')
-    parser.add_argument('-j3', type=str, default=None, help='Coupling 3 (Cosine Modulation, Pts Hz ppm %%).')
+    parser.add_argument('-j1', type=float, default=None, help='Coupling 1 (Cosine Modulation, Pts Hz ppm %%).')
+    parser.add_argument('-j2', type=float, default=None, help='Coupling 2 (Cosine Modulation, Pts Hz ppm %%).')
+    parser.add_argument('-j3', type=float, default=None, help='Coupling 3 (Cosine Modulation, Pts Hz ppm %%).')
     parser.add_argument('-xP0', type=float, nargs='+', default=[0.0], help='Zero Order Phase of All Signals for x-axis (list of floats, one for each model).') #
     parser.add_argument('-xP1', type=float, nargs='+', default=[0.0], help='First Order Phase of All Signals for x-axis (list of floats, one for each model).') #
     parser.add_argument('-yP0', type=float, nargs='+', default=[0.0], help='Zero Order Phase of All Signals for y-axis (list of floats, one for each model).') #
@@ -151,18 +151,16 @@ class SpecSimArgs :
         Initial x-axis decay value in Hz for each model.
     initYDecay : float
         Initial y-axis decay value in Hz for each model.
-    xDecayLB : float
-        Lower bound for decay in Hz.
-    xDecayUB : float
-        Upper bound for decay in Hz.
-    yDecayLB : float
-        Lower bound for y-decay in Hz.
-    yDecayUB : float
-        Upper bound for y-decay in Hz.
-    ampLB : float
-        Lower bound for amplitude.
-    ampUB : float
-        Upper bound for amplitude.
+    xDecayBounds : list[float]
+        Lower bound and upper bound for x-decay in Hz.
+    yDecayBounds : list[float]
+        Lower bound and upper bound for y-decay in Hz.
+    ampBounds : list[float]
+        Lower and upper bounds for amplitude.
+    p0Bounds : list[float]
+        Lower and upper bounds for p0 phase.
+    p1Bounds : list[float]
+        Lower and upper bounds for p1 phase.
     step : float
         Step-size for optimizations that require step-size (e.g. basin).
     offsets : list[float]
@@ -194,17 +192,19 @@ class SpecSimArgs :
     notdj : bool
         No time-domain J-coupling flag.
     """
-    def __init__(self, args : argparse.Namespace) -> None :
+    def __init__(self, args : argparse.Namespace | None = None) -> None :
+        if args is None:
+            return
         self.tab : str = args.tab
         self.fid : str = args.fid
         self.ft1: str = args.ft1
         self.ft2: str = args.ft2
-        self.apod : str = args.apod
-        self.out : str = args.out
-        self.basis : str = args.basis
+        self.apod : str | None = args.apod
+        self.out : str | None = args.out
+        self.basis : str | None = args.basis
         self.ndim : int = args.ndim
-        self.res : str = args.res
-        self.scale : list[float] = args.scale
+        self.res : str | None = args.res
+        self.scale : list[float] | None = args.scale
         self.rx1: int = args.rx1
         self.rxn : int = args.rxn
         self.mode : str = args.mode
@@ -214,7 +214,7 @@ class SpecSimArgs :
         self.verb : bool = args.verb
         self.noverb : bool = args.noverb
         self.report : bool = args.report
-        self.freq : list[float] = args.freq
+        self.freq : list[float] | None = args.freq
         self.model : str = args.model
         self.initXDecay : list[float] = args.initXDecay
         self.initYDecay : list[float] = args.initYDecay
@@ -225,9 +225,9 @@ class SpecSimArgs :
         self.p1Bounds : list[float] = args.p1Bounds
         self.step : float = args.step
         self.offsets : list[float] = args.off
-        self.j1 : str = args.j1
-        self.j2 : str = args.j2
-        self.j3 : str = args.j3
+        self.j1 : float | None = args.j1
+        self.j2 : float | None = args.j2
+        self.j3 : float | None = args.j3
         self.xP0: list[float] = args.xP0
         self.xP1: list[float] = args.xP1
         self.yP0: list[float] = args.yP0
@@ -238,6 +238,60 @@ class SpecSimArgs :
         self.tdd : bool = args.tdd
         self.tdj : bool = args.tdj
         self.notdj : bool = args.notdj
+
+
+    def set_values(self, tab: str = 'master.tab', fid: str = 'test.fid', ft1: str = 'test.ft1', ft2: str = 'test.ft2', apod: str | None = None, out: str | None = None,
+                 basis: str | None = None, ndim: int = 2, res: str | None = None, scale: list[float] | None = [1.0, 1.0], rx1: int = 0, rxn: int = 0, mode: str = 'lsq',
+                 trials: int = 100, maxFail: int = 0, iseed: int = randint(1, sys.maxsize), verb: bool = False, noverb: bool = False, report: bool = False,
+                 freq: list[float] | None = None, model: str = 'exp', initXDecay: list[float] = [2.0], initYDecay: list[float] = [0.0],
+                 xDecayBounds: list[float] = [0.0, 100.0], yDecayBounds: list[float] = [0.0, 20.0], ampBounds: list[float] = [0.0, 10.0],
+                 p0Bounds: list[float] = [-180.0, 180.0], p1Bounds: list[float] = [-180.0, 180.0], step: float = 0.1, offsets: list[float] = [0.0, 0.0],
+                 j1: float | None = None, j2: float | None = None, j3: float | None = None, xP0: list[float] = [0.0], xP1: list[float] = [0.0], yP0: list[float] = [0.0],
+                 yP1: list[float] = [0.0], ts: bool = False, nots: bool = False, notdd: bool = False, tdd: bool = False, tdj: bool = False, notdj: bool = False) -> None:
+        self.tab = tab
+        self.fid = fid
+        self.ft1 = ft1
+        self.ft2 = ft2
+        self.apod = apod
+        self.out = out
+        self.basis = basis
+        self.ndim = ndim
+        self.res = res
+        self.scale = scale
+        self.rx1 = rx1
+        self.rxn = rxn
+        self.mode = mode
+        self.trials = trials
+        self.maxFail = maxFail
+        self.iseed = iseed
+        self.verb = verb
+        self.noverb = noverb
+        self.report = report
+        self.freq = freq
+        self.model = model
+        self.initXDecay = initXDecay
+        self.initYDecay = initYDecay
+        self.xDecayBounds = xDecayBounds
+        self.yDecayBounds = yDecayBounds
+        self.ampBounds = ampBounds
+        self.p0Bounds = p0Bounds
+        self.p1Bounds = p1Bounds
+        self.step = step
+        self.offsets = offsets
+        self.j1 = j1
+        self.j2 = j2
+        self.j3 = j3
+        self.xP0 = xP0
+        self.xP1 = xP1
+        self.yP0 = yP0
+        self.yP1 = yP1
+        self.ts = ts
+        self.nots = nots
+        self.notdd = notdd
+        self.tdd = tdd
+        self.tdj = tdj
+        self.notdj = notdj
+
 
     def __str__(self) -> str :
         return (f"SpecSimArgs(tab={self.tab}, fid={self.fid}, ft1={self.ft1}, ft2={self.ft2}, apod={self.apod}, out={self.out}, "

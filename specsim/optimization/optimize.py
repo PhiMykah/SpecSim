@@ -328,7 +328,6 @@ def optimize(input_spectrum : Spectrum,
 
         optimized_spectrum.update_peaks(optimized_decays, optimized_phases, optimized_weights, parameter_count, num_of_dimensions)
 
-    np.save("specsim/tests/data/output/numpy/optimized_params.npy", optimized_params)
     return optimized_spectrum
 
 
@@ -399,7 +398,7 @@ def objective_function(params : np.ndarray | list,
     else:
         difference : Any = difference_equation(target.array, simulation)
 
-    print(f"\rCurrent difference: {difference}")
+    # print(f"\rCurrent difference: {difference}")
     return difference
 
 def basis_objective_function(params : np.ndarray | list, 
