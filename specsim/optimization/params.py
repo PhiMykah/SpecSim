@@ -27,6 +27,8 @@ class OptimizationParams:
         Upper and lower bounds for the p1 phase in degrees, by default (-180.0, 180.0)
     initial_weight : float, optional 
         Initial weight value for the optimization
+    score_scale : float, optional
+        Scaling factor percentage to scale the rms score (between 0 and 1), by default 0.01
     Raises
     ------
     TypeError
@@ -44,7 +46,8 @@ class OptimizationParams:
             amplitude_bounds : tuple[float, float] | None = None,
             p0_bounds : tuple[float, float] | None = None,
             p1_bounds : tuple[float, float] | None = None,
-            initial_weight : list[Vector[float]] | Vector[float] | None = None) -> None:
+            initial_weight : list[Vector[float]] | Vector[float] | None = None,
+            score_scale : float = 0.1) -> None:
 
         if not isinstance(num_of_dimensions, int):
             raise TypeError("Number of dimensions for optimization parameters must be an integer.")
@@ -60,6 +63,7 @@ class OptimizationParams:
         self.p0_bounds = p0_bounds
         self.p1_bounds = p1_bounds
         self.initial_weight = initial_weight
+        self.score_scale = score_scale
 
     # ---------------------------------------------------------------------------- #
     #                              Getters and Setters                             #
@@ -273,7 +277,20 @@ class OptimizationParams:
             self._initial_weight : list[Vector[float]] = clamped_vectors
         else:
             raise TypeError("initial_weight must be list of float vectors, float Vector, or a float!")
-        
+    
+    # -------------------------------- Score Scale ------------------------------- #
+
+    @property
+    def score_scale(self) -> float:
+        return self._score_scale
+    
+    @score_scale.setter
+    def score_scale(self, value) -> None:
+        if not isinstance(value, float):
+            raise ValueError("Score scale must be a float value!")
+        clamped_score : float = min(max(0.0, value), 1.0)
+        self._score_scale : float = clamped_score
+
     # ---------------------------------------------------------------------------- #
     #                                Magic Functions                               #
     # ---------------------------------------------------------------------------- #

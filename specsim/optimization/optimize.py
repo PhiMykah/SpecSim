@@ -276,18 +276,23 @@ def optimize(input_spectrum : Spectrum,
         initial_weight
     ))
 
+    # Calculate rms values of each data_type
+    calc_rms = lambda data_frame : np.sqrt(np.sum(data_frame.array ** 2) / data_frame.array.size) 
+    rms_values = (calc_rms(fid), calc_rms(interferogram), calc_rms(data_frame_spectrum))
+
     optimization_args : tuple = (num_of_dimensions, domain, input_spectrum, model_function, 
-                         fid, interferogram, data_frame_spectrum, None, 
+                         fid, interferogram, data_frame_spectrum, rms_values, opt_params.score_scale, None, 
                          offsets, constant_time_region_sizes, scaling_factors, parameter_count)
     
     obj_func : Callable = basis_objective_function if use_deco else objective_function
+
 
     match method:
         case OptMethod.LSQ:
             verbose: Literal[2] | Literal[0] = 2 if input_spectrum.verbose else 0
             difference_equation : Callable[..., Any] = lambda target, simulated: (target - simulated).flatten()
             optimization_args = (num_of_dimensions, domain, input_spectrum, model_function, 
-                                 fid, interferogram, data_frame_spectrum, difference_equation, 
+                                 fid, interferogram, data_frame_spectrum, rms_values, opt_params.score_scale, difference_equation, 
                                  offsets, constant_time_region_sizes, scaling_factors, parameter_count)
             result : Any = least_squares(obj_func, initial_params, '2-point',
                                    optimization_bounds, 'trf', args=optimization_args, 
@@ -340,6 +345,8 @@ def objective_function(params : np.ndarray | list,
                        fid : pype.DataFrame, 
                        interferogram : pype.DataFrame,
                        data_frame_spectrum : pype.DataFrame,
+                       rms_values : tuple[float, float, float],
+                       score_scale : float,
                        difference_equation : Callable | None = None,
                        offsets : Vector[float] | None = None,
                        constant_time_region_sizes : Vector[int] | None = None,
@@ -364,6 +371,10 @@ def objective_function(params : np.ndarray | list,
         Original spectral interferogram data 
     data_frame_spectrum : pype.DataFrame
         Original spectrum data frequency domain data
+    rms_values : tuple[float, float, float]
+        RMS values of each signal type for score calculation
+    score_scale : float
+        Scaling percentage of rms value for score calculation
     difference_equation : Callable, optional
         Equation used to calculate difference between both arrays
     offsets : Vector[float] | None, optional
@@ -388,18 +399,25 @@ def objective_function(params : np.ndarray | list,
     match domain:
         case Domain.FID:
             target : pype.DataFrame = fid
+            rms : float = rms_values[0]
         case Domain.FT1:
             target : pype.DataFrame = interferogram
+            rms : float = rms_values[1]
         case Domain.FT2:
             target : pype.DataFrame = data_frame_spectrum
+            rms : float = rms_values[2]
 
+    if target.array is None:
+        raise ValueError("Target data set must have a populated array!")
+    
     if difference_equation is None or not callable(difference_equation):
-        difference : Any = np.sum((target.array - simulation) ** 2)
+        difference : Any = np.sqrt(np.sum((target.array - simulation) ** 2) / np.size(target.array))
     else:
         difference : Any = difference_equation(target.array, simulation)
 
-    # print(f"\rCurrent difference: {difference}")
-    return difference
+    score = ((score_scale * rms) * difference)
+    print(f"\rCurrent score: {np.sum(score)}", flush=True)
+    return score
 
 def basis_objective_function(params : np.ndarray | list, 
                        num_of_dimensions : int, 
@@ -409,6 +427,8 @@ def basis_objective_function(params : np.ndarray | list,
                        fid : pype.DataFrame, 
                        interferogram : pype.DataFrame,
                        data_frame_spectrum : pype.DataFrame,
+                       rms_values : tuple[float,float,float],
+                       score_scale : float,
                        difference_equation : Callable | None = None,
                        offsets : Vector[float] | None = None,
                        constant_time_region_sizes : Vector[int] | None = None,
@@ -435,10 +455,13 @@ def basis_objective_function(params : np.ndarray | list,
     match domain:
         case Domain.FID:
             target : pype.DataFrame = fid
+            rms : float = rms_values[0]
         case Domain.FT1:
             target : pype.DataFrame = interferogram
+            rms : float = rms_values[1]
         case Domain.FT2:
             target : pype.DataFrame = data_frame_spectrum
+            rms : float = rms_values[2]
 
     synthetic_data, coefficients = pype.Deco.runDeco(target, bases, multiprocessing=True)
 
@@ -452,7 +475,8 @@ def basis_objective_function(params : np.ndarray | list,
     else:
         difference : Any = difference_equation(target.array, synthetic_data)
         
-    return difference
+    score = ((score_scale * rms) * difference)
+    return score
     
 def unpack_params(peak_count : int, num_of_dimensions : int, params : Any, unpack_count : int = 1) -> tuple[list[float],list[float],list[float],list[float]]:
     """

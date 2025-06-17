@@ -128,9 +128,13 @@ def test_objective_function_basic(sample_spectrum : Spectrum, sample_data) -> No
            +  [10.0] * num_of_peaks) * num_of_dimensions \
            + list(range(10, 10+(10*num_of_peaks), 10))
 
+    # Calculate rms values of each data_type
+    calc_rms = lambda data_frame : np.sqrt(np.sum(data_frame.array ** 2) / data_frame.array.size) 
+    rms_values = (calc_rms(fid), calc_rms(interferogram), calc_rms(data_frame_spectrum))
+
     model_function : Callable[..., np.ndarray[Any, np.dtype[Any]]] = sim_exponential_1D
     result : float = objective_function(params, num_of_dimensions, Domain.FT1, sample_spectrum,
-                                model_function, fid, interferogram, data_frame_spectrum, None,
+                                model_function, fid, interferogram, data_frame_spectrum, rms_values, 0.1, None,
                                 None, None, None)
 
     assert isinstance(result, (float, np.floating, np.ndarray))
@@ -157,6 +161,32 @@ def test_optmization(sample_spectrum : Spectrum, sample_data) -> None:
     output.setArray(simulation)
 
     assert not pype.write_to_file(output, file_path(OUTPUT, "sim_optimization.ft1"), True)
+
+def test_full_optimization(sample_full_spectrum : Spectrum, sample_data) -> None:
+    fid, interferogram, data_frame_spectrum = sample_data
+    sample_full_spectrum.verbose = True
+    model_function : Callable[..., np.ndarray[Any, np.dtype[Any]]] = sim_exponential_1D
+    num_of_dimensions = 2
+    opt_params = OptimizationParams(num_of_dimensions)
+    offsets = Vector(165.0, 0)
+    scaling_factors = Vector(3.0518e-05, 1)
+    opt_params.initial_phase = Vector(Phase(-13, 0), Phase(0, 0))
+    opt_params.p0_bounds = (-15.0, 5.0)
+    opt_params.p1_bounds = (0.0, 0.0)
+    
+    optimized_spectrum : Spectrum = optimize(sample_full_spectrum, model_function, fid,
+                                             interferogram, data_frame_spectrum,
+                                             Domain.FT1, OptMethod.DANNEAL, opt_params, offsets=offsets,
+                                             scaling_factors=scaling_factors)
+    
+    simulation : np.ndarray[Any, np.dtype[Any]] = optimized_spectrum.simulate(model_function, data_frame_spectrum,
+                                             interferogram, fid, None, num_of_dimensions,
+                                             None, 1, None, None, offsets, scaling_factors)
+    output = pype.DataFrame(file_path(DEFAULT, "test.ft1"))
+
+    output.setArray(simulation)
+
+    assert not pype.write_to_file(output, file_path(OUTPUT, "sim_full_optimization.ft1"), True)
 
 def test_composite_optmization(sample_spectrum : Spectrum, sample_data) -> None:
     fid, interferogram, data_frame_spectrum = sample_data
